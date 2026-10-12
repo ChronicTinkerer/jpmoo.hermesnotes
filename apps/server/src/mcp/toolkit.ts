@@ -61,10 +61,18 @@ function whenConds(ctx: Ctx, when: string): (Condition | FilterGroup)[] {
       return [prop(start, "lt", "today+1"), ...openConds(ctx)];
     case "unscheduled":
       return [prop(end, "empty"), prop(start, "empty"), ...openConds(ctx)];
-    default:
+    default: {
+      // A date: due by that day, cumulative like the words above. A caller
+      // that has worked out which day "Tuesday" is had no way to ask for it.
+      if (/^\d{4}-\d{2}-\d{2}$/.test(when)) {
+        const next = new Date(`${when}T00:00:00Z`);
+        next.setUTCDate(next.getUTCDate() + 1);
+        return [prop(end, "lt", next.toISOString().slice(0, 10)), ...openConds(ctx)];
+      }
       throw new Error(
-        `Unknown when="${when}". Use overdue, today, tomorrow, week, available, or unscheduled.`,
+        `Unknown when="${when}". Use overdue, today, tomorrow, week, available, unscheduled, or a date as YYYY-MM-DD.`,
       );
+    }
   }
 }
 
@@ -356,7 +364,7 @@ export async function defineTools(api: Api): Promise<ToolDef[]> {
 
   tool(
     "task_find",
-    `List/search tasks. All params optional and composable.${statuses} status takes any of those, or "open" for everything unfinished (comma-separated for several); when: overdue|today|tomorrow|week|available|unscheduled; term: text search; project: title or id; list: a saved collection's title or id; region: a matrix region/row/column title within that list (e.g. "Do").`,
+    `List/search tasks. All params optional and composable.${statuses} status takes any of those, or "open" for everything unfinished (comma-separated for several); when: overdue|today|tomorrow|week|available|unscheduled, or a date as YYYY-MM-DD for what is due by that day; term: text search; project: title or id; list: a saved collection's title or id; region: a matrix region/row/column title within that list (e.g. "Do").`,
     {
       status: z.string().optional(),
       when: z.string().optional(),
@@ -474,7 +482,7 @@ export async function defineTools(api: Api): Promise<ToolDef[]> {
             ),
           );
       }
-      if (a.when) items.push(...whenConds(ctx, a.when));
+      if (a.when) items.push(...whenConds(ctx, a.when.trim()));
       if (a.term) items.push({ kind: "text", value: a.term } as Condition);
       for (const t of [...(a.tags ?? []), ...(a.tag ? [a.tag] : [])])
         items.push({ kind: "tag", tag: t.trim().toLowerCase().replace(/^#+/, "") } as Condition);
