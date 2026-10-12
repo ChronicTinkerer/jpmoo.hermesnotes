@@ -128,6 +128,12 @@ const READONLY_TOOLS = new Set([
   "daily_note_get",
   "calendar_events",
   "daily_review",
+  // The reading half of the interchange binding: the manifest, the types and
+  // one object, each built from GETs. interchange_patch is the writing half
+  // and stays out.
+  "interchange_conformance",
+  "interchange_types",
+  "interchange_object",
 ]);
 
 /**
