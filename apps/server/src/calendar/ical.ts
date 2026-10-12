@@ -192,12 +192,22 @@ const WEEKDAY_INDEX: Record<string, number> = {
   SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6,
 };
 
+/**
+ * Whether an occurrence starting at `startMs` touches [windowStart, windowEnd].
+ * An event's end is the instant it stops, not part of it: an all-day event on
+ * the 12th ends at midnight on the 13th and is not on the 13th. One with no
+ * length at all is where it starts.
+ */
+function touches(startMs: number, durationMs: number, windowStart: number, windowEnd: number): boolean {
+  if (startMs > windowEnd) return false;
+  return durationMs > 0 ? startMs + durationMs > windowStart : startMs >= windowStart;
+}
+
 /** Expand one event's occurrences that intersect [windowStart, windowEnd] (ms). */
 function expand(ev: RawEvent, windowStart: number, windowEnd: number): number[] {
   if (!ev.rrule) {
     // Single occurrence: include if it overlaps the window at all.
-    const end = ev.startMs + ev.durationMs;
-    return end >= windowStart && ev.startMs <= windowEnd ? [ev.startMs] : [];
+    return touches(ev.startMs, ev.durationMs, windowStart, windowEnd) ? [ev.startMs] : [];
   }
 
   const parts: Record<string, string> = {};
@@ -248,8 +258,7 @@ function expand(ev: RawEvent, windowStart: number, windowEnd: number): number[] 
     for (const ms of periodDays.sort((a, b) => a - b)) {
       if (ms > until || emitted >= cap) break;
       emitted++;
-      const end = ms + ev.durationMs;
-      if (end >= windowStart && ms <= windowEnd) out.push(ms);
+      if (touches(ms, ev.durationMs, windowStart, windowEnd)) out.push(ms);
       if (ms > windowEnd) return out; // past the window — later instances only get further away
     }
 
