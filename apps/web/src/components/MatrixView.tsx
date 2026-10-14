@@ -29,6 +29,7 @@ import { usePanels } from "../lib/right-panel.tsx";
 import { useAsOf, useToday } from "../lib/as-of.tsx";
 import { ColorPickerModal } from "./ColorPickerModal.tsx";
 import { DateTimePicker } from "./DateTimePicker.tsx";
+import { PointerMenu } from "./PointerMenu.tsx";
 
 type RegionSize = "short" | "medium" | "tall";
 const REGION_HEIGHTS: Record<RegionSize, number> = { short: 224, medium: 280, tall: 350 };
@@ -273,11 +274,14 @@ function Chip({
   item,
   onRemove,
   onStatus,
+  onMenu,
   landing,
 }: {
   item: Item;
   onRemove?: (id: string) => void;
   onStatus?: (item: Item, field: FieldDef, next: string) => void;
+  /** Right-click: the "Move to…" menu, the way to move a card without dragging it. */
+  onMenu?: (item: Item, x: number, y: number) => void;
   /** Draw the landing strip above this card (the drop would land here). */
   landing?: boolean;
 }) {
@@ -339,6 +343,16 @@ function Chip({
         clearTip();
         selectOrOpen(item.id);
       }}
+      onContextMenu={
+        onMenu
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              clearTip();
+              onMenu(item, e.clientX, e.clientY);
+            }
+          : undefined
+      }
     >
       <div className="chip-row">
         {statusField ? (
@@ -424,6 +438,7 @@ function RegionCell({
   actionsSet = false,
   onRemove,
   onStatus,
+  onMenu,
   onInteract,
   landingBefore,
 }: {
@@ -439,6 +454,7 @@ function RegionCell({
   actionsSet?: boolean;
   onRemove?: (id: string) => void;
   onStatus?: (item: Item, field: FieldDef, next: string) => void;
+  onMenu?: (item: Item, x: number, y: number) => void;
   onInteract?: () => void;
   /**
    * Where the strip goes while a card is dragged over this region: the id of the
@@ -502,6 +518,7 @@ function RegionCell({
             item={it}
             onRemove={onRemove}
             onStatus={onStatus}
+            onMenu={onMenu}
             landing={landingBefore !== undefined && landingBefore === it.id}
           />
         ))}
@@ -1072,6 +1089,62 @@ export function MatrixView({
     setDropAt(null);
   };
 
+  /**
+   * The moves a drop makes, apart from the drop: the right-click "Move to…" menu
+   * makes the same ones, so a card moved either way gets the same region
+   * actions (tags on enter and leave, the entry status) and lands in the same
+   * place — the end of the region.
+   */
+  const moveToRow = (item: Item, row: number) => {
+    const prev = rowOfCard(item.id);
+    if (prev === row) return;
+    void api
+      .patch(`/collections/${collection.id}`, { matrix_lanes: { ...lanesMap, [item.id]: row } })
+      .then(async () => {
+        await applyRegionLeave(item, prev);
+        await applyRegionEnter(item, row);
+        onChanged();
+        refreshInfo();
+        setQueryTick((t) => t + 1);
+      });
+  };
+  const moveToRegion = (item: Item, region: number) => {
+    if (bound) {
+      const opt = boundOptions[region];
+      if (opt != null) patchBlockProps(item, bindKey, opt);
+    } else if (item.member) {
+      const m = members.find((x) => x.id === item.id);
+      const prev = regionOf(item.id);
+      if (prev === region) return;
+      void api
+        .patch(`/collections/${collection.id}/members/${item.id}`, {
+          context: { ...(m?.context ?? {}), region },
+        })
+        .then(async () => {
+          await applyRegionLeave(item, prev);
+          await applyRegionEnter(item, region);
+          onChanged();
+          refreshInfo();
+          setQueryTick((t) => t + 1);
+        });
+    } else {
+      void api
+        .post(`/collections/${collection.id}/members`, { blockId: item.id, context: { region } })
+        .then(async () => {
+          await applyRegionEnter(item, region);
+          onChanged();
+          refreshInfo();
+          setQueryTick((t) => t + 1);
+        });
+    }
+  };
+  /** Back to the drawer: unbound → remove the membership; status-bound →
+   *  clear the bound property so it becomes an unplaced match. */
+  const moveToDrawer = (item: Item) => {
+    if (bound) patchBlockProps(item, bindKey, "");
+    else if (item.member && !dateMode) removeMember(item.id);
+  };
+
   const onDragEnd = (e: DragEndEvent) => {
     setActive(null);
     const landing = dropAt;
@@ -1082,20 +1155,7 @@ export function MatrixView({
     const over = String(overId);
     if (dateMode) {
       // Vertical moves only: dates own the columns, drops set the row-region.
-      if (over.startsWith("row:")) {
-        const row = Number(over.slice(4));
-        const prev = rowOfCard(item.id);
-        if (prev === row) return;
-        void api
-          .patch(`/collections/${collection.id}`, { matrix_lanes: { ...lanesMap, [item.id]: row } })
-          .then(async () => {
-            await applyRegionLeave(item, prev);
-            await applyRegionEnter(item, row);
-            onChanged();
-            refreshInfo();
-            setQueryTick((t) => t + 1);
-          });
-      }
+      if (over.startsWith("row:")) moveToRow(item, Number(over.slice(4)));
       return;
     }
     // Dropped onto a card (or into a region's empty tail) → land exactly where
@@ -1141,42 +1201,8 @@ export function MatrixView({
       }
       return;
     }
-    if (over.startsWith("r:")) {
-      const region = Number(over.slice(2));
-      if (bound) {
-        const opt = boundOptions[region];
-        if (opt != null) patchBlockProps(item, bindKey, opt);
-      } else if (item.member) {
-        const m = members.find((x) => x.id === item.id);
-        const prev = regionOf(item.id);
-        if (prev === region) return;
-        void api
-          .patch(`/collections/${collection.id}/members/${item.id}`, {
-            context: { ...(m?.context ?? {}), region },
-          })
-          .then(async () => {
-            await applyRegionLeave(item, prev);
-            await applyRegionEnter(item, region);
-            onChanged();
-            refreshInfo();
-            setQueryTick((t) => t + 1);
-          });
-      } else {
-        void api
-          .post(`/collections/${collection.id}/members`, { blockId: item.id, context: { region } })
-          .then(async () => {
-            await applyRegionEnter(item, region);
-            onChanged();
-            refreshInfo();
-            setQueryTick((t) => t + 1);
-          });
-      }
-    } else if (over === "drawer") {
-      // Back to the drawer: unbound → remove the membership; status-bound →
-      // clear the bound property so it becomes an unplaced match.
-      if (bound) patchBlockProps(item, bindKey, "");
-      else if (item.member && !dateMode) removeMember(item.id);
-    }
+    if (over.startsWith("r:")) moveToRegion(item, Number(over.slice(2)));
+    else if (over === "drawer") moveToDrawer(item);
   };
 
   /**
@@ -1189,6 +1215,36 @@ export function MatrixView({
     const list = (placement.map.get(dropAt.region) ?? []).filter((x) => x.id !== active.id);
     return { region: dropAt.region, beforeId: list[dropAt.index]?.id ?? null };
   }, [dropAt, active, placement]);
+
+  /**
+   * Right-click on a card: every other region (or row), and the drawer. The
+   * quick way to move something a long way — dragging still works, and a drag
+   * is still the only way to choose a place *within* a region.
+   */
+  const [cardMenu, setCardMenu] = useState<{ item: Item; x: number; y: number } | null>(null);
+  const openCardMenu = (item: Item, x: number, y: number) => {
+    selectCollection();
+    setCardMenu({ item, x, y });
+  };
+  useEffect(() => {
+    if (!cardMenu) return;
+    const close = () => setCardMenu(null);
+    // Capture phase, so a press that something else stops still closes it.
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target as HTMLElement | null)?.closest?.(".matrix-move-menu")) close();
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("blur", close);
+    };
+  }, [cardMenu]);
 
   const drawerDrop = useDroppable({ id: "drawer" });
   const drawerItems = dateMode
@@ -1418,7 +1474,7 @@ export function MatrixView({
                     gridRow: rowStartOf(b.row) + 1 + b.sub,
                   }}
                 >
-                  <Chip item={b.item} onStatus={onStatus} />
+                  <Chip item={b.item} onStatus={onStatus} onMenu={openCardMenu} />
                 </div>
               ))}
             </div>
@@ -1458,6 +1514,7 @@ export function MatrixView({
                   actionsSet={!bound && hasActions(regions[i])}
                   onRemove={bound ? undefined : removeMember}
                   onStatus={onStatus}
+                  onMenu={openCardMenu}
                   onInteract={selectCollection}
                 />
               ))}
@@ -1530,6 +1587,9 @@ export function MatrixView({
                     item={it}
                     onRemove={it.member && !bound ? removeMember : undefined}
                     onStatus={onStatus}
+                    // A date matrix places by date; its drawer holds what has
+                    // none, and a row would not give it one.
+                    onMenu={dateMode ? undefined : openCardMenu}
                   />
                 ))
               )}
@@ -1537,6 +1597,54 @@ export function MatrixView({
           </div>
         )}
       </div>
+
+      {cardMenu &&
+        (() => {
+          const { item } = cardMenu;
+          const here = dateMode
+            ? rowOfCard(item.id)
+            : ([...placement.map.entries()].find(([, list]) => list.some((x) => x.id === item.id))?.[0] ?? null);
+          // Named as the grid names them. An untitled one reads "Untitled region"
+          // there too; only when several are untitled does it need a number.
+          const defs = dateMode ? regions.slice(0, count) : regionList;
+          const blank = dateMode ? "Untitled row" : "Untitled region";
+          const blanks = defs.filter((d) => !d.title.trim()).length;
+          const targets = defs.map((def, i) => ({
+            i,
+            title: pretty(def.title).trim() || (blanks > 1 ? `${blank} ${i + 1}` : blank),
+          }));
+          // Only something placed can go back; a drawer card is already there.
+          const toDrawer = !dateMode && here != null && (bound || item.member);
+          return createPortal(
+            <PointerMenu
+              className="menu cv-menu matrix-move-menu"
+              x={cardMenu.x}
+              y={cardMenu.y}
+              onPick={() => setCardMenu(null)}
+            >
+              <div className="menu-label">Move to</div>
+              {targets.map(({ i, title }) => (
+                <button
+                  key={i}
+                  className={`menu-item${i === here ? " current" : ""}`}
+                  disabled={i === here}
+                  onClick={() => (dateMode ? moveToRow(item, i) : moveToRegion(item, i))}
+                >
+                  {title}
+                </button>
+              ))}
+              {toDrawer && (
+                <>
+                  <div className="menu-sep" />
+                  <button className="menu-item" onClick={() => moveToDrawer(item)}>
+                    Drawer
+                  </button>
+                </>
+              )}
+            </PointerMenu>,
+            document.body,
+          );
+        })()}
 
       <DragOverlay dropAnimation={null}>
         {active && (

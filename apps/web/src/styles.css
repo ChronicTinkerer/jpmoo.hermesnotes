@@ -1200,6 +1200,21 @@ label,
 .menu-item:hover {
   background: var(--surface-2);
 }
+/* Where the card already is, in a "Move to" list: shown so the list reads as
+   the whole grid, but not a choice. */
+.menu-item.current,
+.menu-item.current:hover {
+  background: transparent;
+  color: var(--text-faint);
+  cursor: default;
+}
+.menu-item.current::after {
+  content: " · here";
+}
+/* Over the matrix's drawer (sticky, z 20), which a card in it opens from. */
+.matrix-move-menu {
+  z-index: 100;
+}
 
 /* Color picker modal */
 .color-row {
