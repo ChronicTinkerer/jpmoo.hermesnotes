@@ -41,6 +41,16 @@ export interface ParsedEvent {
 
 interface RawEvent extends ParsedEvent {
   rrule: string | null;
+  /** RECURRENCE-ID: this VEVENT replaces one occurrence of the series with the
+   *  same UID — the occurrence that would have started at this ms. */
+  recurrenceId: number | null;
+  /** EXDATE: occurrences the series no longer has (cancelled ones, in Outlook). */
+  exdates: number[];
+  /** STATUS:CANCELLED. */
+  cancelled: boolean;
+  /** The zone DTSTART's wall time was given in, when it named one we know.
+   *  A series repeats at that wall time — 9:00 stays 9:00 across a clock change. */
+  tz: string | null;
   /** ms epoch of DTSTART, for recurrence math. */
   startMs: number;
   /** ms duration (end - start), preserved across recurrence instances. */
@@ -201,7 +211,10 @@ function zonedWallToMs(y: number, mo: number, d: number, hh: number, mm: number,
  * TZID (IANA or Windows name) is resolved to its zone so timed events land at
  * the right instant; unknown zones and floating times fall back to UTC.
  */
-function parseDateValue(value: string, params: Record<string, string>): { ms: number; allDay: boolean } | null {
+function parseDateValue(
+  value: string,
+  params: Record<string, string>,
+): { ms: number; allDay: boolean; tz?: string } | null {
   const isDate = params.VALUE === "DATE" || /^\d{8}$/.test(value);
   const m = value.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/);
   if (!m) return null;
@@ -216,7 +229,7 @@ function parseDateValue(value: string, params: Record<string, string>): { ms: nu
     const mapped = Object.prototype.hasOwnProperty.call(WINDOWS_TZ, raw) ? WINDOWS_TZ[raw] : undefined;
     const tz = mapped ?? raw;
     const ms = zonedWallToMs(nums[0], nums[1], nums[2], nums[3], nums[4], nums[5], tz);
-    if (ms != null) return { ms, allDay: false };
+    if (ms != null) return { ms, allDay: false, tz };
   }
 
   const ms = Date.UTC(nums[0], nums[1] - 1, nums[2], nums[3], nums[4], nums[5]);
@@ -263,6 +276,20 @@ function touches(startMs: number, durationMs: number, windowStart: number, windo
 }
 
 /** Expand one event's occurrences that intersect [windowStart, windowEnd] (ms). */
+/** An instant's wall-clock time in `tz`, as the ms of that wall time read as UTC. */
+function wallOf(ms: number, tz: string): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, hour12: false, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    }).formatToParts(new Date(ms));
+    const g = (t: string) => Number(parts.find((x) => x.type === t)?.value ?? 0);
+    return Date.UTC(g("year"), g("month") - 1, g("day"), g("hour") % 24, g("minute"), g("second"));
+  } catch {
+    return null;
+  }
+}
+
 function expand(ev: RawEvent, windowStart: number, windowEnd: number): number[] {
   if (!ev.rrule) {
     // Single occurrence: include if it overlaps the window at all.
@@ -289,15 +316,33 @@ function expand(ev: RawEvent, windowStart: number, windowEnd: number): number[] 
         .filter((n): n is number => n != null)
     : null;
 
+  // Walk the series in its own wall-clock time, then turn each occurrence back
+  // into an instant. Stepping instants by whole days put a 9:00 weekly meeting
+  // at 8:00 for every week after the clocks went back — and an occurrence moved
+  // or cancelled after the change then matched none of them, so it showed twice.
+  const zone = ev.tz;
+  const toWall = (ms: number) => (zone ? wallOf(ms, zone) ?? ms : ms);
+  const toReal = (wall: number) => {
+    if (!zone) return wall;
+    const w = new Date(wall);
+    return (
+      zonedWallToMs(
+        w.getUTCFullYear(), w.getUTCMonth() + 1, w.getUTCDate(),
+        w.getUTCHours(), w.getUTCMinutes(), w.getUTCSeconds(), zone,
+      ) ?? wall
+    );
+  };
+  const startWall = toWall(ev.startMs);
+
   const out: number[] = [];
-  const start = new Date(ev.startMs);
+  const start = new Date(startWall);
   let emitted = 0;
   let iterations = 0;
   const cap = Math.min(count, RRULE_CAP);
 
   // Walk period-by-period from DTSTART; within a period, emit BYDAY days for
   // weekly rules (or just the base day otherwise).
-  const cursor = new Date(ev.startMs);
+  const cursor = new Date(startWall);
   while (emitted < cap && iterations < 5000) {
     iterations++;
     const periodDays: number[] = [];
@@ -308,13 +353,14 @@ function expand(ev: RawEvent, windowStart: number, windowEnd: number): number[] 
         const d = new Date(weekStart);
         d.setUTCDate(d.getUTCDate() + wd);
         d.setUTCHours(start.getUTCHours(), start.getUTCMinutes(), start.getUTCSeconds(), 0);
-        if (d.getTime() >= ev.startMs) periodDays.push(d.getTime());
+        if (d.getTime() >= startWall) periodDays.push(d.getTime());
       }
     } else {
       periodDays.push(cursor.getTime());
     }
 
-    for (const ms of periodDays.sort((a, b) => a - b)) {
+    for (const wall of periodDays.sort((a, b) => a - b)) {
+      const ms = toReal(wall);
       if (ms > until || emitted >= cap) break;
       emitted++;
       if (touches(ms, ev.durationMs, windowStart, windowEnd)) out.push(ms);
@@ -328,8 +374,9 @@ function expand(ev: RawEvent, windowStart: number, windowEnd: number): number[] 
     else if (freq === "YEARLY") cursor.setUTCFullYear(cursor.getUTCFullYear() + interval);
     else break;
 
-    if (cursor.getTime() > windowEnd && emitted > 0) break;
-    if (cursor.getTime() - ev.startMs > 366 * 20 * DAY_MS) break; // 20-year safety
+    // Wall and real time differ by a zone offset at most; a day covers it.
+    if (cursor.getTime() > windowEnd + DAY_MS && emitted > 0) break;
+    if (cursor.getTime() - startWall > 366 * 20 * DAY_MS) break; // 20-year safety
   }
   return out;
 }
@@ -382,7 +429,10 @@ export function parseIcs(text: string): RawEvent[] {
   for (const line of lines) {
     const { name, params, value } = parseLine(line);
     if (name === "BEGIN" && value === "VEVENT") {
-      cur = { summary: "", description: "", location: "", uid: "", rrule: null, organizer: null, attendees: [] };
+      cur = {
+        summary: "", description: "", location: "", uid: "", rrule: null, organizer: null, attendees: [],
+        recurrenceId: null, exdates: [], cancelled: false, tz: null,
+      };
       continue;
     }
     if (name === "END" && value === "VEVENT") {
@@ -398,6 +448,10 @@ export function parseIcs(text: string): RawEvent[] {
           attendees: cur.attendees ?? [],
           allDay: cur._allDay ?? false,
           rrule: cur.rrule ?? null,
+          recurrenceId: cur.recurrenceId ?? null,
+          exdates: cur.exdates ?? [],
+          cancelled: cur.cancelled ?? false,
+          tz: cur.tz ?? null,
           startMs,
           durationMs: Math.max(0, endMs - startMs),
           start: "",
@@ -437,6 +491,7 @@ export function parseIcs(text: string): RawEvent[] {
         if (d) {
           cur._startMs = d.ms;
           cur._allDay = d.allDay;
+          cur.tz = d.tz ?? null;
         }
         break;
       }
@@ -447,6 +502,21 @@ export function parseIcs(text: string): RawEvent[] {
       }
       case "RRULE":
         cur.rrule = value;
+        break;
+      case "RECURRENCE-ID": {
+        const d = parseDateValue(value, params);
+        if (d) cur.recurrenceId = d.ms;
+        break;
+      }
+      case "EXDATE":
+        // May repeat, and each line may list several.
+        for (const v of value.split(",")) {
+          const d = parseDateValue(v.trim(), params);
+          if (d) cur.exdates = [...(cur.exdates ?? []), d.ms];
+        }
+        break;
+      case "STATUS":
+        cur.cancelled = value.trim().toUpperCase() === "CANCELLED";
         break;
       default:
         break;
@@ -465,11 +535,48 @@ export function eventsInRange(icsText: string, startISO: string, endISO: string)
   const [ey, em, ed] = endISO.split("-").map(Number) as [number, number, number];
   const windowEnd = Date.UTC(ey, em - 1, ed) + DAY_MS - 1; // last ms of the last day
   const raw = parseIcs(icsText);
+  // A recurring series and the occurrences changed since: Outlook (and Google)
+  // write each changed occurrence as its own VEVENT carrying the series' UID
+  // and a RECURRENCE-ID naming the occurrence it replaces. Ignoring that showed
+  // a moved meeting twice — once where the series put it, once where it went —
+  // and, where both landed on the same start, kept whichever came first in the
+  // file. Outlook writes the changed one with no attendees, so a meeting that
+  // had its invitees on every other week showed nobody on that one.
+  const masters = new Map<string, RawEvent>();
+  const replaced = new Map<string, Set<number>>();
+  for (const ev of raw) {
+    if (ev.recurrenceId == null) masters.set(ev.uid, ev);
+    else {
+      const set = replaced.get(ev.uid) ?? new Set<number>();
+      set.add(ev.recurrenceId);
+      replaced.set(ev.uid, set);
+    }
+  }
   const out: ParsedEvent[] = [];
   const seen = new Set<string>();
   for (const ev of raw) {
+    let shown = ev;
+    if (ev.recurrenceId != null) {
+      // A cancelled occurrence is a gap in the series, not an event.
+      if (ev.cancelled) continue;
+      // What the changed occurrence leaves out, it has from its series —
+      // RFC 5545 says an override stands alone, but a feed that drops the
+      // invitees from one week of a weekly meeting has not uninvited anybody.
+      const series = masters.get(ev.uid);
+      if (series) {
+        shown = {
+          ...ev,
+          organizer: ev.organizer ?? series.organizer,
+          attendees: ev.attendees.length ? ev.attendees : series.attendees,
+          location: ev.location || series.location,
+          description: ev.description || series.description,
+        };
+      }
+    }
+    const skip = new Set<number>([...ev.exdates, ...(ev.recurrenceId == null ? replaced.get(ev.uid) ?? [] : [])]);
     for (const startMs of expand(ev, windowStart, windowEnd)) {
-      const inst = formatInstance(ev, startMs);
+      if (ev.recurrenceId == null && skip.has(startMs)) continue;
+      const inst = formatInstance(shown, startMs);
       const key = `${ev.uid}|${inst.start}`;
       if (seen.has(key)) continue;
       seen.add(key);
