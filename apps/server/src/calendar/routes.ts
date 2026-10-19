@@ -59,6 +59,14 @@ export const FEED_NOTES_KEY = "feed_description";
 export const FEED_PEOPLE_KEY = "feed_people";
 
 /**
+ * The feed's location, read-only, for an event type with no `location` field of
+ * its own. A type that has one gets it there, editable and mirrored as before;
+ * one that doesn't used to drop the location on conversion, so the event lost
+ * where it was the moment it became yours.
+ */
+export const FEED_LOCATION_KEY = "feed_location";
+
+/**
  * The property values a feed event dictates, keyed by the type's own field keys.
  * This is both what a conversion seeds and the baseline recorded on the sync row
  * (`last_feed`) for later change detection.
@@ -74,6 +82,7 @@ function feedProperties(type: EventType, ev: EventLike): Record<string, unknown>
       ev.organizer || ev.attendees?.length ? { organizer: ev.organizer ?? null, attendees: ev.attendees ?? [] } : null,
   };
   if (fields.some((f) => f.key === "location")) props.location = ev.location || "";
+  else props[FEED_LOCATION_KEY] = ev.location || "";
   return props;
 }
 

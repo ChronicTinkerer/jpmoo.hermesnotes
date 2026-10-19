@@ -279,6 +279,9 @@ export function TypedBlockCard({
   // — not its content — is what marks the event as joined, so an empty one still
   // shows the section rather than silently vanishing.
   const feedNotes = typeof props.feed_description === "string" ? props.feed_description.trim() : null;
+  // The feed's location, kept when the type has no location field of its own
+  // (FEED_LOCATION_KEY on the server).
+  const feedLocation = typeof props.feed_location === "string" ? props.feed_location.trim() : "";
   // Who the feed says organized and was invited (FEED_PEOPLE_KEY on the server).
   const feedPeople =
     props.feed_people && typeof props.feed_people === "object"
@@ -385,6 +388,18 @@ export function TypedBlockCard({
         </div>
       )}
 
+      {!compact && feedLocation && (
+        <div className="field typed-field full feed-notes">
+          <span>Location</span>
+          <div className="feed-notes-body">{renderFeedText(feedLocation)}</div>
+        </div>
+      )}
+      {!compact && feedPeople && (
+        <div className="field typed-field full">
+          <span>People</span>
+          <FeedPeople organizer={feedPeople.organizer} attendees={feedPeople.attendees} />
+        </div>
+      )}
       {!compact && feedNotes !== null && (
         <div className="field typed-field full feed-notes">
           <span>Feed description</span>
@@ -393,12 +408,6 @@ export function TypedBlockCard({
           ) : (
             <div className="feed-notes-body empty">(empty)</div>
           )}
-        </div>
-      )}
-      {!compact && feedPeople && (
-        <div className="field typed-field full">
-          <span>People</span>
-          <FeedPeople organizer={feedPeople.organizer} attendees={feedPeople.attendees} />
         </div>
       )}
 
