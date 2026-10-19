@@ -1,17 +1,38 @@
 /**
  * Minimal iCalendar (RFC 5545) parser + recurrence expansion. Deliberately
  * self-contained (no dependency) and scoped to what the calendar feature needs:
- * VEVENT summary/description/location, DTSTART/DTEND (date & date-time), UID,
+ * VEVENT summary/description/location, ORGANIZER/ATTENDEE, DTSTART/DTEND (date & date-time), UID,
  * and a common subset of RRULE (FREQ + INTERVAL/COUNT/UNTIL/BYDAY). Recurrences
  * are expanded only within a requested window, with a hard cap, so a runaway or
  * infinite rule can't blow up memory.
  */
+
+/**
+ * Somebody named on an event — its organizer, or one of the invited.
+ *
+ * Only what a feed says. Many say nothing: a published Outlook calendar
+ * usually leaves attendees out, and a feed that does carry them may give an
+ * address with no name, or no reply. So everything past the address is
+ * optional, and an event with nobody named simply has none.
+ */
+export interface FeedPerson {
+  name: string;
+  email: string;
+  /** PARTSTAT, in plain words. Absent when the feed doesn't say. */
+  response?: "accepted" | "declined" | "tentative" | "pending" | "delegated";
+  /** ROLE=OPT-PARTICIPANT: invited as optional. */
+  optional?: boolean;
+}
 
 export interface ParsedEvent {
   uid: string;
   summary: string;
   description: string;
   location: string;
+  organizer: FeedPerson | null;
+  /** The invited people. Rooms and equipment (CUTYPE=ROOM/RESOURCE) are left
+   *  out: a booked room is where the event is, not who is coming. */
+  attendees: FeedPerson[];
   /** YYYY-MM-DD (all-day) or full ISO string (timed). */
   start: string;
   end: string | null;
@@ -46,18 +67,56 @@ function unfold(text: string): string[] {
 
 /** Split "NAME;PARAM=x:VALUE" into { name, params, value }. */
 function parseLine(line: string): { name: string; params: Record<string, string>; value: string } {
-  const colon = line.indexOf(":");
+  // A parameter value may be quoted, and a quoted one may hold ':' and ';' —
+  // Outlook writes `CN="Smith, Jo: Facilities"`. So the name ends at the first
+  // colon *outside* quotes, and parameters split on semicolons outside them.
+  let colon = -1;
+  let quoted = false;
+  const cuts: number[] = [];
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') quoted = !quoted;
+    else if (!quoted && c === ";") cuts.push(i);
+    else if (!quoted && c === ":") {
+      colon = i;
+      break;
+    }
+  }
   if (colon < 0) return { name: line.toUpperCase(), params: {}, value: "" };
-  const head = line.slice(0, colon);
   const value = line.slice(colon + 1);
-  const parts = head.split(";");
+  const bounds = [-1, ...cuts, colon];
+  const parts = bounds.slice(0, -1).map((b, i) => line.slice(b + 1, bounds[i + 1]));
   const name = (parts.shift() ?? "").toUpperCase();
   const params: Record<string, string> = {};
   for (const p of parts) {
     const eq = p.indexOf("=");
-    if (eq > 0) params[p.slice(0, eq).toUpperCase()] = p.slice(eq + 1);
+    if (eq > 0) params[p.slice(0, eq).toUpperCase()] = p.slice(eq + 1).replace(/^"(.*)"$/, "$1");
   }
   return { name, params, value };
+}
+
+const RESPONSES: Record<string, FeedPerson["response"]> = {
+  ACCEPTED: "accepted",
+  DECLINED: "declined",
+  TENTATIVE: "tentative",
+  "NEEDS-ACTION": "pending",
+  DELEGATED: "delegated",
+};
+
+/** An ORGANIZER or ATTENDEE line as a person; null for a room or a blank. */
+function personOf(params: Record<string, string>, value: string): FeedPerson | null {
+  const kind = (params.CUTYPE ?? "").toUpperCase();
+  if (kind === "ROOM" || kind === "RESOURCE") return null;
+  const email = value.replace(/^mailto:/i, "").trim();
+  const name = unescapeText(params.CN ?? "").trim();
+  // Google names a person by their address when it has nothing better.
+  const shown = name && name.toLowerCase() !== email.toLowerCase() ? name : "";
+  if (!email && !shown) return null;
+  const person: FeedPerson = { name: shown, email };
+  const response = RESPONSES[(params.PARTSTAT ?? "").toUpperCase()];
+  if (response) person.response = response;
+  if ((params.ROLE ?? "").toUpperCase() === "OPT-PARTICIPANT") person.optional = true;
+  return person;
 }
 
 function unescapeText(v: string): string {
@@ -323,7 +382,7 @@ export function parseIcs(text: string): RawEvent[] {
   for (const line of lines) {
     const { name, params, value } = parseLine(line);
     if (name === "BEGIN" && value === "VEVENT") {
-      cur = { summary: "", description: "", location: "", uid: "", rrule: null };
+      cur = { summary: "", description: "", location: "", uid: "", rrule: null, organizer: null, attendees: [] };
       continue;
     }
     if (name === "END" && value === "VEVENT") {
@@ -335,6 +394,8 @@ export function parseIcs(text: string): RawEvent[] {
           summary: cur.summary || "(untitled)",
           description: cur.description || "",
           location: cur.location || "",
+          organizer: cur.organizer ?? null,
+          attendees: cur.attendees ?? [],
           allDay: cur._allDay ?? false,
           rrule: cur.rrule ?? null,
           startMs,
@@ -360,6 +421,17 @@ export function parseIcs(text: string): RawEvent[] {
       case "LOCATION":
         cur.location = unescapeText(value);
         break;
+      case "ORGANIZER":
+        cur.organizer = personOf(params, value);
+        break;
+      case "ATTENDEE": {
+        const who = personOf(params, value);
+        // The same address listed twice (it happens with delegation) is one person.
+        if (who && !cur.attendees?.some((a) => a.email && a.email.toLowerCase() === who.email.toLowerCase())) {
+          cur.attendees = [...(cur.attendees ?? []), who];
+        }
+        break;
+      }
       case "DTSTART": {
         const d = parseDateValue(value, params);
         if (d) {

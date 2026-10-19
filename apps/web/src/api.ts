@@ -281,12 +281,23 @@ export interface CalendarFeed {
   sort: number;
 }
 
+/** Somebody a calendar feed names on an event — organizer or invited. */
+export interface FeedPerson {
+  name: string;
+  email: string;
+  response?: "accepted" | "declined" | "tentative" | "pending" | "delegated";
+  optional?: boolean;
+}
+
 /** A read-only event pulled from a subscribed calendar feed. */
 export interface FeedEvent {
   uid: string;
   summary: string;
   description: string;
   location: string;
+  /** Absent from a server older than this field, and null when the feed names nobody. */
+  organizer?: FeedPerson | null;
+  attendees?: FeedPerson[];
   start: string; // YYYY-MM-DD (all-day) or ISO datetime
   end: string | null;
   allDay: boolean;

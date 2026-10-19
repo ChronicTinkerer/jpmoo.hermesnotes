@@ -6865,6 +6865,75 @@ input.cv-add-input {
   font-style: italic;
   opacity: 0.7;
 }
+/* Who a feed says organized and was invited — read-only, like its description. */
+.feed-people {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+.typed-field .feed-people {
+  margin-bottom: 0;
+}
+.feed-people-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.feed-people-organizer {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.feed-people-tally {
+  color: var(--text-faint);
+}
+.feed-people-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.feed-people-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+.feed-people-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feed-people-note,
+.feed-people-reply {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.feed-people-reply {
+  margin-left: auto;
+}
+.feed-people-list li.reply-accepted .feed-people-reply {
+  color: var(--accent);
+}
+.feed-people-list li.reply-declined .feed-people-name {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+.feed-people-more {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+}
 /* An editable field whose value is a URL: input plus a click-through. */
 .field-with-link {
   display: flex;

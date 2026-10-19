@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api, type FeedEvent } from "../api.ts";
 import { emitFeedEventConverted } from "../lib/calendar-events.ts";
 import { renderFeedText } from "../lib/feed-text.tsx";
+import { FeedPeople } from "./FeedPeople.tsx";
 import { usePanels } from "../lib/right-panel.tsx";
 
 const fmtDateTime = (v: string, allDay: boolean) => {
@@ -49,6 +50,8 @@ export function FeedEventPane({
         summary: event.summary,
         description: event.description,
         location: event.location,
+        organizer: event.organizer ?? null,
+        attendees: event.attendees ?? [],
         start: event.start,
         end: event.end,
         allDay: event.allDay,
@@ -84,6 +87,8 @@ export function FeedEventPane({
         <span className="feed-event-source">from {event.feedName}</span>
       </div>
 
+      <FeedPeople organizer={event.organizer} attendees={event.attendees} />
+
       {event.description && (
         <p className="feed-event-desc">{renderFeedText(event.description)}</p>
       )}
@@ -96,8 +101,8 @@ export function FeedEventPane({
       </div>
       <p className="hint feed-event-convert-hint">
         Takes this event's place on the calendar as an editable Hermes Notes event. It follows the
-        feed's date, time and location, and keeps the feed's own description alongside yours as
-        read-only notes. Archive or delete it to bring the feed event back.
+        feed's date, time and location, and keeps the feed's own description and who was invited
+        alongside yours, read-only. Archive or delete it to bring the feed event back.
       </p>
       {err && <div className="error" style={{ marginTop: 8 }}>{err}</div>}
     </div>

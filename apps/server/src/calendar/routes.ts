@@ -9,9 +9,17 @@ import { effectiveTimeZone } from "../lib/timezone.js";
 import { badRequest, notFound } from "../lib/errors.js";
 import { authenticate, requireUser } from "../auth/middleware.js";
 import { computeEmbedSource } from "../blocks/embed-source.js";
-import { eventsInRange, zoneEvent, type ParsedEvent } from "./ical.js";
+import { eventsInRange, zoneEvent, type FeedPerson, type ParsedEvent } from "./ical.js";
 
-type EventLike = { summary: string; description: string; location: string; start: string; end?: string | null };
+type EventLike = {
+  summary: string;
+  description: string;
+  location: string;
+  start: string;
+  end?: string | null;
+  organizer?: FeedPerson | null;
+  attendees?: FeedPerson[];
+};
 type EventType = typeof blockTypes.$inferSelect;
 
 /**
@@ -43,6 +51,14 @@ async function resolveEventType(userId: string): Promise<EventType> {
 export const FEED_NOTES_KEY = "feed_description";
 
 /**
+ * Who the feed says organized the event and who it invited — read-only, beside
+ * the feed's description, for the same reason: it is the feed's to say. Null
+ * when the feed names nobody, which many do (a published Outlook calendar
+ * usually leaves attendees out), so a block never shows an empty "Invited".
+ */
+export const FEED_PEOPLE_KEY = "feed_people";
+
+/**
  * The property values a feed event dictates, keyed by the type's own field keys.
  * This is both what a conversion seeds and the baseline recorded on the sync row
  * (`last_feed`) for later change detection.
@@ -54,6 +70,8 @@ function feedProperties(type: EventType, ev: EventLike): Record<string, unknown>
     title: ev.summary || "(untitled event)",
     [spanKey]: { start: ev.start, end: ev.end ?? ev.start },
     [FEED_NOTES_KEY]: ev.description || "",
+    [FEED_PEOPLE_KEY]:
+      ev.organizer || ev.attendees?.length ? { organizer: ev.organizer ?? null, attendees: ev.attendees ?? [] } : null,
   };
   if (fields.some((f) => f.key === "location")) props.location = ev.location || "";
   return props;
@@ -821,6 +839,13 @@ export async function calendarRoutes(app: FastifyInstance): Promise<void> {
    *          brings the event back.
    *   copy — a one-off copy: no link, the feed event stays visible.
    */
+  const person = z.object({
+    name: z.string().max(500).default(""),
+    email: z.string().max(500).default(""),
+    response: z.enum(["accepted", "declined", "tentative", "pending", "delegated"]).optional(),
+    optional: z.boolean().optional(),
+  });
+
   app.post("/calendar/convert", async (req, reply) => {
     const userId = requireUser(req);
     const body = z
@@ -831,6 +856,8 @@ export async function calendarRoutes(app: FastifyInstance): Promise<void> {
         summary: z.string().default(""),
         description: z.string().default(""),
         location: z.string().default(""),
+        organizer: person.nullable().optional(),
+        attendees: z.array(person).max(2000).optional(),
         start: z.string().min(1),
         end: z.string().nullable().optional(),
         allDay: z.boolean().default(false),

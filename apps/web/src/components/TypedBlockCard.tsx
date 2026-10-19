@@ -1,9 +1,10 @@
 import { isComplete, type FieldDef } from "@hermes/shared";
 import { useEffect, useRef, useState } from "react";
-import type { BlockType, Block } from "../api.ts";
+import type { BlockType, Block, FeedPerson } from "../api.ts";
 import { api, ApiError } from "../api.ts";
 import { BlockIcon } from "../lib/icons.tsx";
 import { renderFeedText } from "../lib/feed-text.tsx";
+import { FeedPeople } from "./FeedPeople.tsx";
 import { fmtDateTime } from "../lib/format.ts";
 import { emitBlockChange, emitBlockDeleted, useBlockOrigin, useBlockSync } from "../lib/block-events.ts";
 import { useRegisterEditor } from "../lib/editor-registry.ts";
@@ -278,6 +279,11 @@ export function TypedBlockCard({
   // — not its content — is what marks the event as joined, so an empty one still
   // shows the section rather than silently vanishing.
   const feedNotes = typeof props.feed_description === "string" ? props.feed_description.trim() : null;
+  // Who the feed says organized and was invited (FEED_PEOPLE_KEY on the server).
+  const feedPeople =
+    props.feed_people && typeof props.feed_people === "object"
+      ? (props.feed_people as { organizer?: FeedPerson | null; attendees?: FeedPerson[] })
+      : null;
   return (
     <div
       className="card typed-card"
@@ -387,6 +393,12 @@ export function TypedBlockCard({
           ) : (
             <div className="feed-notes-body empty">(empty)</div>
           )}
+        </div>
+      )}
+      {!compact && feedPeople && (
+        <div className="field typed-field full">
+          <span>People</span>
+          <FeedPeople organizer={feedPeople.organizer} attendees={feedPeople.attendees} />
         </div>
       )}
 
