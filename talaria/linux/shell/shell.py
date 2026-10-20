@@ -155,6 +155,41 @@ class RoutedPage(QWebEnginePage):
             return False
         return super().acceptNavigationRequest(url, kind, is_main_frame)
 
+    def createWindow(self, _kind):  # noqa: N802
+        """
+        A link that asks for a new window — `target="_blank"`, `window.open`.
+
+        Every outbound link in Hermes is one, and the default answer here is no
+        page at all, which Qt takes as "refused": clicking a link in the Hermes
+        window did nothing whatever. A new window is never what is wanted —
+        somebody's website belongs in the browser, and a link into this library
+        belongs in the Hermes window — so the page handed back exists only to
+        learn where it was being sent, routes that, and goes away.
+        """
+        return _NewWindowCatcher(self)
+
+
+class _NewWindowCatcher(QWebEnginePage):
+    """Stands in for a new window just long enough to hear its URL."""
+
+    def __init__(self, opener: RoutedPage) -> None:
+        super().__init__(opener.profile(), opener)
+        self._opener = opener
+        self._done = False
+
+    def acceptNavigationRequest(self, url: QUrl, kind, is_main_frame: bool) -> bool:  # noqa: N802
+        if not self._done and not url.isEmpty() and url.scheme() != "about":
+            self._done = True
+            if url.scheme() in ("http", "https"):
+                # Not taken by the route means it is the Hermes window's own:
+                # it goes there rather than into a window of its own.
+                if not self._opener._route(url):
+                    self._opener.setUrl(url)
+            elif url.scheme() in ("mailto", "tel", "sms"):
+                subprocess.Popen(["xdg-open", url.toString()], start_new_session=True)
+            QTimer.singleShot(0, self.deleteLater)
+        return False
+
 
 _HARVEST: str | None = None
 
