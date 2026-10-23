@@ -1,16 +1,27 @@
 # The desktop — Talaria as the place you work
 
-**Status: design, not built.** Worked out in conversation on 2026-10-22. Nothing
-below exists yet except the pieces it names as already here.
+**Status: design, not built.** Worked out in conversation on 2026-10-22 and
+23. One spike has run (see *What the layer spike found*); nothing else below
+exists yet except the pieces it names as already here.
 
-Hyprland with Noctalia only. KDE keeps the Talaria it has; see *Where it runs*.
+**Hyprland, and nothing else on screen.** This plan assumes no desktop shell
+underneath — no Noctalia, no waybar, no dock. Talaria draws everything you see
+that is not an application window, and the few things it does not draw come
+from small single-purpose tools named in *What Talaria borrows*. KDE keeps the
+Talaria it has; see *Where it runs*.
+
+**Morgan is part of it, not beside it.** The assistant
+(`~/Documents/Scripts/heyclaude`; called Morgan here and from now on) is how
+the desktop is talked to, and the desktop is what Morgan knows about. See
+*Morgan*.
 
 ## The thesis
 
 Today Talaria sits *beside* the desktop: a tray, panels you summon, a desk you
 open. This is the step after that. **The canvas is the desktop**, every project
 is a canvas, and everything — an app window, a block, a website — opens *from
-where it lives* on a canvas, or flies in from nowhere if it lives on none.
+where it lives* on a canvas, or flies in from nowhere if it lives on none. You
+can ask for any of it by name, in the launcher or out loud.
 
 It is a new shape, not a port and not a rewrite. It keeps everything Talaria
 earned — the daemon as the only thing that knows Hermes exists, `canvas.json`
@@ -19,6 +30,16 @@ does not understand, it must not destroy" — and it reverses one decision on
 purpose: `AMBIENT.md` #4, workspace binding, was skipped because "nobody here
 works in workspaces." In this design workspaces are how projects run, so it is
 back, and for a reason the original note did not have.
+
+**From scratch, deliberately.** Noctalia was the first answer to "what is on
+the screen," and it is a good one — but every surface it owns is one this
+design wants to mean something else: the dock should be cards, the wallpaper
+should be the canvas, the launcher should find projects and blocks as readily
+as apps, the bar should show projects rather than workspace numbers, and
+Morgan's face should not be a plugin in somebody else's shell. Building on top
+of it meant a plugin API's limits at every one of those (a launcher result has
+one action; a plugin cannot host a web view). So the plan does not lean on it.
+It can keep running while the pieces are built; nothing below depends on it.
 
 ## The model
 
@@ -85,7 +106,9 @@ the same small set, defined once, in the daemon:
 | `new …` | project, note on Home, card from the focused window |
 
 This is the same discipline as the format: one vocabulary, many callers, and no
-surface with a private copy of what "open" means.
+surface with a private copy of what "open" means. **Morgan is a caller like any
+other** — "open the Ogham editor" is `open <card>`, reached through the
+daemon's MCP, not a second implementation of opening.
 
 ## Opening
 
@@ -105,61 +128,186 @@ A floating launch can name its rectangle (`exec [float; move …; size …]`); a
 tiled one learns its tile only once mapped, so the first version zooms to the
 center.
 
-## Surfaces
+## What is on the screen
+
+Everything here except the canvas was Noctalia's job; all of it is Talaria's
+now. **Every one of these is a layer surface in one process** — the spike
+showed a Qt process under `QT_WAYLAND_SHELL_INTEGRATION=layer-shell` makes
+every window a layer surface, and that is exactly what screen furniture wants.
+None of it is a window rule, so none of it is dropped when Hyprland reloads its
+config — the bug the current panels carry.
 
 ### The canvas
 
 The canvas fork, one surface, two layers:
 
-- **`bottom`** normally — above Noctalia's wallpaper (which is on `background`),
-  below every window. An empty workspace *is* the canvas.
+- **`bottom`** normally — below every window. An empty workspace *is* the
+  canvas. **There is no wallpaper**: the canvas draws its own backdrop, so
+  nothing else lives on that layer to be covered.
 - **`overlay`** on a key, to see the canvas over a project's tiled windows, and
-  the same key drops it back. One program, so nothing about it is a window rule
-  that a config reload can drop — which is the whole class of bug the panels
-  have now.
+  the same key drops it back. The way back is never optional: the key is a
+  compositor bind, Escape drops it, and it drops by itself after a stretch with
+  no input. See the spike for why.
 - Keyboard focus **on demand**, so it takes keys when clicked into and never
   steals them from a tiled app.
 
-Noctalia's own desktop widgets share the `bottom` layer and are covered by it —
-see *What the layer spike found*.
+### The bar
+
+A layer surface along the top with an exclusive zone, so tiled windows and the
+canvas both keep clear of it (the spike's canvas already did, for Noctalia's).
+What it shows:
+
+- **Projects**, not workspace numbers: the current one's title, a switcher,
+  live windows per project.
+- **Morgan**: listening, thinking, speaking, idle — and one click to talk or
+  open the conversation. It is the one place on screen that is always Morgan.
+- **The machine**: clock, battery, volume, network, Bluetooth. Read from
+  `wpctl`, `nmcli`, `bluetoothctl` and `/sys` — all already here — not drawn
+  from a settings framework. Clicking one opens a small panel; the panel's
+  deeper settings hand off to existing tools (`nmtui`, `bluetoothctl`) rather
+  than being rebuilt, because a settings UI is a job with no end.
+
+**No tray.** A StatusNotifierItem host plus DBusMenu is the most fiddly thing a
+shell does, and Qt offers no host for either. Talaria's own tray item goes away
+— the bar *is* Talaria. Which other applications here actually need a tray is
+the question to answer before building one; if the answer is "BlueBubbles,"
+the answer may be no tray at all.
 
 ### The launcher
 
-A Noctalia `[[launcher_provider]]` with `include_in_global_search = true`, so
-its results sit in the ordinary search beside apps rather than behind a prefix,
-and `setQuery` for a second step. The plugin holds no state; it relays one
-ranked query to the daemon, which a launcher of our own would later call
-unchanged.
+An overlay surface with exclusive keyboard while it is up, summoned by a
+compositor bind. One box, everything:
 
-What it finds: projects (ranked high), cards ("Ogham › VS Code on `~/ogham`"),
-blocks from the local mirror (a few in the global list, all of them behind a
-prefix), files in the current project's folder, live windows, and the `new`
-verbs. Current project and recency raise the rank.
+- **Projects** (ranked high), **cards** ("Ogham › VS Code on `~/ogham`"),
+  **blocks** from the local mirror, **files** in the current project's folder,
+  **live windows**, the **`new`** verbs — and **applications**, read from the
+  XDG `.desktop` files, which Noctalia did before and nobody does now.
+- **Morgan, as the fallthrough.** Text that matches nothing is a question, and
+  Enter on it asks Morgan. The launcher is where you type to the desktop; the
+  bar's mic is where you speak to it. Same assistant either way.
+- Owning it removes the limits a plugin had: a **modifier** takes the second
+  action ("place it here" rather than "go there"), and a result can be
+  **dragged** onto a canvas.
 
-**It does not search apps.** Noctalia already does, and a plain app launch
-lands on the active workspace — the current project — anyway. The daemon sees
-the window appear and offers to make it a card. The provider adds only what
-Noctalia cannot know: targets bound to a project.
-
-`krunner.py` already decided two things worth keeping: an unprefixed query
-matches **titles only**, and **forty are fetched to keep ten**.
-
-One limit to live with: a Noctalia result has a single activation, so "place it
-here instead of going there" is a second step, not a modifier key.
+Current project and recency raise the rank. `krunner.py` already decided two
+things worth keeping: an unprefixed query matches **titles only**, and **forty
+are fetched to keep ten**. An application launch lands on the active
+workspace — the current project — and the daemon sees the window appear and
+offers to make it a card.
 
 ### The drawer
 
-The current project's folder as a tree, inside the canvas surface — not a
-Noctalia panel, because dragging a file onto the canvas has to work and that is
-one process talking to itself. A dropped file is a card that opens it. Dropped
-onto a *note*, it can be a path; it cannot be the file's contents, which is
-the attachment entry still open in `pkm-interchange/LIMITS.md`.
+The current project's folder as a tree, on the canvas's side. Dragging a file
+onto the canvas has to work, and inside one process that is the process talking
+to itself. A dropped file is a card that opens it. Dropped onto a *note*, it can
+be a path; it cannot be the file's contents, which is the attachment entry
+still open in `pkm-interchange/LIMITS.md`.
 
-### The bar
+### Notifications
 
-A thin Noctalia widget: the current project's title, a switcher, and the number
-of live windows per project. Noctalia keeps the tray, notifications, lock
-screen, wallpaper and Morgan's plugin, unchanged.
+Talaria is the notification daemon — `org.freedesktop.Notifications` on the
+session bus — with popups as layer surfaces. Owned rather than borrowed for two
+reasons this design has and a generic notifier does not: **a notification can
+be placed** on a canvas like any floating thing (it becomes a card, or a task,
+with one key), and **Morgan can say it** — a reminder Morgan set arrives as
+Morgan, spoken or shown, not as a toast from nowhere. Pruning's "closed three
+windows in Ogham" notices come through here too.
+
+The spec is not small — actions, replacement by id, urgency, images, expiry —
+so until it is done, `mako` holds the bus. Nothing else has to change when
+Talaria takes it over; the bus name is the whole interface.
+
+### The small ones
+
+- **The on-screen display** for volume and brightness keys — the keys stay
+  compositor binds calling `wpctl` and `brightnessctl`, and the bind also tells
+  the surface to show the level.
+- **The power menu** — lock, log out, suspend, restart, shut down.
+- **The theme.** Talaria owns the palette: one file of colors every surface
+  reads, which is what `panel.css`'s four variables were waiting for. It used to
+  be Noctalia's template output. Writing the same palette out for Ghostty and
+  GTK is a later nicety.
+
+### What Talaria borrows
+
+Single-purpose tools, each one a thing that is hard to get right and is not
+what this design is about:
+
+| | |
+|---|---|
+| Lock screen | **`hyprlock`**, installed. Never build a lock screen — a crash in one must keep the session locked, and that is the whole job. |
+| Idle | **`hypridle`**, installed and already in `hyprland.conf`. It calls the lock. |
+| Polkit agent | **`hyprpolkitagent`**, not installed. **Install it before removing Noctalia**, or system password prompts quietly stop appearing. |
+| Notifications, for now | **`mako`**, not installed, until Talaria's own holds the bus. |
+| Network and Bluetooth settings | `nmtui`, `bluetoothctl`, opened from the bar's panels. |
+
+## Morgan
+
+Morgan is a voice-and-chat assistant: wake word, speech in and out, a local
+model for the talking, Claude ("the Oracle") when that is not enough, memory,
+reminders, MCP tools. Its daemon is `heyclaude.service`, it answers on
+`$XDG_RUNTIME_DIR/heyclaude.sock`, and today its face is a Noctalia plugin
+(voice popup, chat, settings, bar icon) plus `window/window.py`, a PySide6 web
+view around `index.html` — Talaria's own pattern already.
+
+### Baked in, and what that means
+
+**Morgan's face is Talaria's.** The bar's Morgan, the voice popup, the
+conversation and Morgan's settings are Talaria surfaces. The plugin goes with
+Noctalia. `window/index.html` comes across nearly as it is — it is already a
+page talking to the daemon through its host — and is the conversation surface,
+able to be a floating panel *or* an ordinary window you tile and keep open
+beside work, which is why `window.py` exists in the first place. Settings joins
+Talaria's settings rather than being a second settings app.
+
+**Morgan's brain stays its own process.** It talks to Talaria over its socket,
+the event stream it already has (`watch`) and the commands it already takes
+(`toggle`, `ask`, `say`, `stop`…). Two reasons, and the second decides it:
+Morgan crashing should not take the desktop with it, and
+`docs/server-and-satellites.md` moves the brain to the home server so one
+Morgan serves the laptop, the kitchen and wherever else. In that plan this
+laptop is a satellite — microphone, speaker, wake word — and **Talaria is the
+satellite's face.** Baking Morgan in means the face, the knowledge of the
+desktop and the ability to act on it; it does not mean Morgan lives in
+Talaria's process or repository.
+
+**The desktop is what Morgan knows.** Talaria's daemon serves an MCP —
+projects, canvases, cards, the drawer, the verbs, and *what is current* — and
+Morgan connects to it as one of its servers:
+
+- *What am I looking at?* is answered from the daemon: Ogham, its canvas, block
+  `b_123` selected, VS Code focused. **No screenshot.** Morgan's sight today is
+  `grim` — a photograph of the screen — and that is the problem its own test
+  notes record. Structured context is the better answer and the private one;
+  sight stays for when it is asked for in so many words.
+- *Open my editor*, *put this on the Ogham canvas*, *close what I'm not using*
+  are verbs — the same `open`, `place` and `close` a click calls.
+- What is current is **state, not a record**: no history of windows is kept,
+  which is the line the Linux context record was removed for and still holds.
+
+**Hermes, through Hermes.** Morgan keeps reaching the library through Hermes'
+own MCP — it runs on machines with no Talaria daemon, and that MCP is the
+richer surface. What joins the two is **the block id**: the desktop says which
+block, Hermes says what it is, and a change Morgan writes there reaches a canvas
+when the mirror syncs. `AMBIENT.md`'s "only the daemon knows Hermes exists" was
+about the desktop's sensors and surfaces; Morgan is a peer client of Hermes, not
+one of those.
+
+### Open questions this raises
+
+- **Canvas Chat and Morgan are two chats.** `canvasagent.ts` is Talaria's own
+  chat, deliberately able to do nothing but build and edit a canvas. With Morgan
+  central, two conversational surfaces on one desktop is one too many. The
+  likely answer: canvas editing becomes **tools** on the daemon's MCP, Morgan
+  calls them, and Canvas Chat's panel retires — but Canvas Chat is a feature the
+  owner asked for specifically, so this is the owner's call, not a refactor to
+  slip in.
+- **Glance and Morgan overlap.** Glance reads the focused window and finds
+  related blocks; Morgan answers "what am I looking at." They may want to be one
+  gesture with two halves — the reading and the conversation about it.
+- **The repository is still `heyclaude`**, its command `heyclaude`, its unit
+  `heyclaude.service`. Renaming them to Morgan is its own change in its own
+  repository.
 
 ## Apps
 
@@ -207,7 +355,8 @@ per-window capture, so this is a region of the screen, and it is the screen.
 panel was removed because following the focus meant photographing every window
 passed through. Snapshots are only ever of windows that are cards, never of a
 window because focus crossed it, they honor `blindlist.py`, and they stay on
-this machine.
+this machine. **Morgan does not get them** as a way of seeing — they are the
+card's face, not a camera.
 
 ## Pruning
 
@@ -224,8 +373,9 @@ it back — so safety is decided per thing, not per policy:
 
 When, gentlest first:
 
-1. **`close <project>`**, asked for. Snapshot, close, remove the workspace.
-   Floating windows in it get one prompt: place, send to Recent, or close.
+1. **`close <project>`**, asked for — by click, launcher or Morgan. Snapshot,
+   close, remove the workspace. Floating windows in it get one prompt: place,
+   send to Recent, or close.
 2. **Projects left alone** for a while — configurable, a few hours — have their
    safe windows closed quietly. Last visit comes from Hyprland's focus events.
 3. **Memory pressure**, read from `/proc/pressure/memory` rather than free
@@ -235,67 +385,43 @@ When, gentlest first:
 SIGSTOP is not an answer — it frees the CPU and keeps every byte. Firefox's own
 unload-tabs-on-low-memory setting is a useful second layer inside each window.
 
-**Always visible:** cards show live or asleep, a quiet notification through
-Noctalia says what was closed and that it is on the canvas, and the bar counts
-live windows per project.
-
-## Morgan
-
-Morgan (`~/Documents/Scripts/heyclaude`) keeps reaching Hermes through Hermes'
-own MCP. Two reasons: it does not always run on this laptop — the home-server
-role has no desktop to ask — and Hermes' MCP is the richer surface, with the
-`interchange_*` tools there if it ever needs the format. `AMBIENT.md`'s "only
-the daemon knows Hermes exists" was about the desktop's *sensors and surfaces*;
-Morgan is a peer client of Hermes, not one of those.
-
-What brings them together is **the block id**, not a shared door:
-
-- The daemon serves an MCP of its own — projects, canvases, cards, the drawer,
-  the verbs, and what is current — and Morgan adds it as a second server.
-- *What am I looking at?* comes from the daemon: Ogham, its canvas, block
-  `b_123` selected. **No screenshot.** That is sight Morgan no longer has to
-  take, which is the problem noted in its tests.
-- *Tell me about it* or *mark it done* goes to Hermes with that same id.
-- *Put this on the Ogham canvas* goes to the daemon.
-
-What is current is **state, not a record**: no history of windows is kept,
-which is the line the Linux context record was removed for and still holds.
-
-A change Morgan writes to Hermes reaches a canvas when the mirror syncs —
-seconds, not a correctness problem.
+**Always visible:** cards show live or asleep, a notification says what was
+closed and that it is on the canvas, and the bar counts live windows per
+project.
 
 ## Where it runs
 
 | | |
 |---|---|
-| **Daemon** | `packages/daemon`, extended. Projects, canvases, cards, the verbs, the launcher query, the MCP. **Shared with the Mac**, so everything new is additive routes, and `canvas.json` stays where it is — it becomes Home — so the Mac app sees no change. Per-project canvases are new files beside it; `canvas.ts` and `canvasagent.ts` assume one path today and are the first thing that changes. |
-| **Canvas surface** | The canvas fork in WebEngine, drawn as a layer surface, with the drawer inside it. |
-| **Shell** | `linux/shell`, as now: panels, Glance, settings, hotkeys. Hyprland work goes through `wm/hypr.py`; KDE's backend answers "no desktop" and nothing else changes there — the one-shell rule stands. |
-| **Noctalia plugin** | Bar widget and launcher provider, calling the CLI. Everything Noctalia-specific is here, so replacing Noctalia's bar someday is a rewrite of this and nothing else. |
-| **Hyprland config** | Binds and workspace rules that call the same CLI, written by `install.sh` as the binds are now. |
+| **Talaria daemon** | `packages/daemon`, extended. Projects, canvases, cards, the verbs, the launcher query, the MCP. **Shared with the Mac**, so everything new is additive routes, and `canvas.json` stays where it is — it becomes Home — so the Mac app sees no change. Per-project canvases are new files beside it; `canvas.ts` and `canvasagent.ts` assume one path today and are the first thing that changes. |
+| **Surfaces** | **New.** One PySide6 process under `layer-shell`: canvas, bar, launcher, drawer, notification popups, OSD, power menu, Morgan's voice popup. The canvas fork and the pages are WebEngine views through the shell's own `scheme.py`. |
+| **Shell** | `linux/shell`, as now, for what are ordinary windows: settings, board, New Block, Glance, the Hermes window — and Morgan's conversation when it is kept open as a window. Hyprland work goes through `wm/hypr.py`; KDE's backend answers "no desktop" and nothing else changes there — the one-shell rule stands. |
+| **Morgan** | `heyclaude.service`, unchanged in kind — locally now, as a satellite of the home server later. |
+| **Borrowed** | `hypridle` → `hyprlock`, `hyprpolkitagent`, and `mako` until Talaria holds the notification bus. |
+| **Hyprland config** | `talaria.conf`, written by `install.sh`: the binds (launcher, overlay, volume, brightness, Morgan's talk key), workspace rules, and the `exec-once` lines. `hyprland.conf` stays the user's. |
+
+**The surfaces process is the desktop, so it is a service.** A crashed panel is
+a panel that does not open; a crashed surfaces process is no bar, no launcher
+and a blank screen. So it runs as a systemd user service that restarts, not a
+scope. If one surface proves crash-prone, *that* is the reason to split it into
+a process of its own — not before.
+
+**One process for the furniture was the spike's lesson, not just a preference:**
+layer-shell is chosen per process, so the surfaces live together and the
+ordinary windows live in the shell.
 
 ### Starting it
 
-Nothing new in kind — one more process, started the way the shell already is:
-
 | | started by |
 |---|---|
-| Noctalia | your own `exec-once` in `hyprland.conf`, as now |
-| Talaria daemon | `talaria.service`, the systemd user unit, as now |
-| Talaria shell | `exec-once` in `~/.config/hypr/talaria.conf` through `systemd-run --scope`, as now |
-| **Canvas surface** | **new:** a second line in `talaria.conf`, written by `install.sh` beside the shell's |
-| Noctalia plugin | Noctalia itself, from `~/.local/share/noctalia/plugins/`, like workspace-peek |
+| Talaria daemon | `talaria.service`, as now |
+| Morgan | `heyclaude.service`, as now |
+| Surfaces | **new:** `talaria-surfaces.service`, started from `talaria.conf` once the compositor is up |
+| Shell | `exec-once` in `talaria.conf` through `systemd-run --scope`, as now |
+| `hypridle`, `hyprpolkitagent`, `mako` | `exec-once`, in `talaria.conf` |
 
-No ordering is needed between them. Noctalia's wallpaper and the canvas sit on
-different layers and neither waits for the other; the canvas and the plugin ask
-the daemon, which systemd started before the session.
-
-**One thing worth doing differently for the canvas:** a crashed panel is a
-panel that does not open, but a crashed canvas is a blank desktop. So it may
-want to be a user *service* that restarts, rather than a scope that does not —
-decide once it exists and has been seen to fail. `hyprland.conf` stays the
-user's; `install.sh` only writes `talaria.conf`, which the existing `source =`
-line already loads.
+Taking Noctalia out is then deleting one line from `hyprland.conf` — the
+`exec-once` that starts it — and is the user's to delete.
 
 ## Spikes before committing
 
@@ -303,7 +429,12 @@ Each is an afternoon, and each can change the design:
 
 - ~~**A layer surface from PySide6.**~~ **Run** — see *What the layer spike
   found* below.
-- ~~**Noctalia's desktop widgets**~~ — same layer, and covered.
+- **Several layer surfaces in one process**: the canvas on `bottom` and the bar
+  on `top` with an exclusive zone, and the launcher on `overlay` with exclusive
+  keyboard, all at once.
+- **Morgan's page in the surfaces process**: `window/index.html` on a layer
+  surface, talking to `heyclaude.sock` through the host — and a voice turn,
+  start to finish, driven from the bar.
 - **Next-new-window binding** against real Firefox and VS Code, with two
   launches close together.
 - **Resume for the web** — the session file first, since it needs no decision
@@ -360,23 +491,40 @@ holds; nothing has to be ported to WebKit.**
   `~/.local/share/talaria/canvas.json`, so notes made while testing are there.
 - **Scale looks like every other Qt window here**: the page reports 1.5625,
   because the session sets `QT_SCALE_FACTOR=1.25` over a 1.25 monitor.
-- **Noctalia's desktop widgets are covered.** They are on the same `bottom`
-  layer and the canvas maps after them, so the clock and battery disappeared
-  under it. The real thing has to choose: draw what they showed on the canvas
-  and retire them, or leave the canvas a hole for them. Not something to
-  decide in a spike.
+- **Whatever shares `bottom` is covered.** Noctalia's desktop widgets did, and
+  the canvas, mapped after them, hid the clock and battery. In this plan nothing
+  else is on that layer — the bar is on `top` — so it stops mattering; it is
+  recorded because anything put on `bottom` later meets it.
 
 ## Order
 
-Nothing needs the step after it to be worth having.
+Two milestones. The first is a desktop with nothing but Talaria on it; the
+second is the design. Nothing needs the step after it to be worth having.
 
-1. Per-project canvases in the daemon; Home is today's `canvas.json`.
-2. The canvas as a `bottom` layer surface, with the overlay key.
-3. Projects as workspaces: `go`, the bar widget.
-4. The launcher provider: projects, blocks, cards, `new`.
-5. Bookmark cards with the three adapters; snapshots; opening out of the card.
-6. Floating, *place*, Recent.
-7. Pruning, in the order above.
-8. The daemon's MCP, and Morgan's second server.
-9. The drawer.
-10. Resume, once the spike says how.
+**Milestone one — Talaria is the whole screen.** Noctalia can run through all
+of it and comes out at the end.
+
+1. Install the borrowed pieces: `layer-shell-qt`, `hyprpolkitagent`, `mako`.
+   Check `hyprlock` is what `hypridle` calls.
+2. The surfaces process as a service, with the canvas on `bottom` — Home is
+   today's `canvas.json` — the overlay key, and its way back.
+3. The bar: Morgan's state, clock, battery, volume, network, Bluetooth, the
+   power menu, and the OSD.
+4. The launcher: applications, blocks, the `new` verbs, and Morgan as the
+   fallthrough.
+5. Morgan's face: the voice popup and the conversation, from `index.html`;
+   Morgan's settings in Talaria's.
+6. The palette, Talaria's own.
+7. Remove Noctalia's `exec-once`.
+
+**Milestone two — the desktop as projects.**
+
+8. Per-project canvases in the daemon.
+9. Projects as workspaces: `go`, and projects in the bar and the launcher.
+10. The daemon's MCP — context and the verbs — and Morgan connected to it.
+11. Bookmark cards with the three adapters; snapshots; opening out of the card.
+12. Floating, *place*, Recent.
+13. Pruning, in the order above.
+14. Talaria's own notifications, replacing `mako`.
+15. The drawer.
+16. Resume, once the spike says how.
