@@ -301,12 +301,8 @@ line already loads.
 
 Each is an afternoon, and each can change the design:
 
-- **A layer surface from PySide6.** LayerShellQt has a C++ API and no Python
-  bindings that ship. Candidates: run the canvas as its own process with
-  LayerShellQt as its Wayland shell integration (which would make *every*
-  window of that process a layer surface — fine for a process that is only the
-  canvas); or WebKitGTK with gtk4-layer-shell. Confirm WebEngine renders and
-  takes input on a `bottom` surface under Hyprland 0.53.
+- ~~**A layer surface from PySide6.**~~ **Run** — see *What the layer spike
+  found* below.
 - **Noctalia's desktop widgets** — which layer, and whether they collide.
 - **Next-new-window binding** against real Firefox and VS Code, with two
   launches close together.
@@ -314,6 +310,50 @@ Each is an afternoon, and each can change the design:
   from anybody.
 - **Per-project canvases in the daemon** — what `canvasagent.ts` needs to be
   told which canvas it is drawing on.
+
+### What the layer spike found
+
+`spikes/layer_canvas.py`, run with `spikes/run.sh` on Hyprland 0.53.3, Qt 6.10.2
+and LayerShellQt 6.6.4 (Ubuntu's `layer-shell-qt`, unpacked rather than
+installed — **the real thing will need it as a dependency**). The canvas fork,
+loaded through the shell's own `scheme.py`, on a full-screen `bottom` surface
+named `talaria-canvas`, clear of the bar's exclusive zone. **The Qt route
+holds; nothing has to be ported to WebKit.**
+
+- **The canvas is its own process, and has to be.** Attaching one `QWidget`
+  window of an ordinary process falls back, silently, to an xdg toplevel — one
+  tiled onto a workspace during the spike. With
+  `QT_WAYLAND_SHELL_INTEGRATION=layer-shell` the whole process is layer
+  surfaces, which the design wanted anyway.
+- **The order is: show, then `Window::get()`, then set, then hide and show.**
+  A `get()` before the first show builds an orphaned `Window` the surface never
+  reads. Through ctypes for that one call; everything else is Qt properties.
+- **A layer change needs a new surface.** `set_layer` on the live one did
+  nothing; a hide and show moves it, and the page keeps its state — one load
+  across every swap. It costs one frame at 640×480 before the real size
+  arrives, which the real thing will have to hide.
+- **Clicks and typing work.** A click gives it the keyboard (on-demand), notes
+  were made and typed into, and Escape reached the page. Taking the overlay
+  takes the keyboard at once; leaving it gives it back. The Super key of a
+  compositor bind arrives as a stray `Meta` keydown — harmless, worth ignoring.
+- **Scrolling did not arrive.** Zero wheel events reached the page while
+  scrolling over it. The canvas pans on the wheel, so this is the open finding:
+  next is whether Qt delivers axis events on a layer surface at all, or the
+  page's listener missed them.
+- **The first run had no way back, and ended in a restart.** The overlay
+  covered the terminal the only escape was typed in. So: a compositor bind
+  swaps (Super+Alt+C — it fires whatever covers the screen), Escape in the
+  page drops it, it drops by itself after twenty seconds, and SIGUSR2 forces
+  it down. **The real canvas ships with the bind and the timeout, not without
+  them.**
+- **Signal it by pid.** `pkill -f layer_canvas.py` also matches the shell that
+  runs it — it killed the agent's own shell, and a bind's `sh -c` would be next.
+- **It is the real Home canvas.** The spike reads and writes
+  `~/.local/share/talaria/canvas.json`, so notes made while testing are there.
+- **Scale looks like every other Qt window here**: the page reports 1.5625,
+  because the session sets `QT_SCALE_FACTOR=1.25` over a 1.25 monitor.
+- **Noctalia's desktop widgets are on the same `bottom` layer**, and the canvas
+  is mapped after them. Whether they end up covered is not yet confirmed.
 
 ## Order
 
