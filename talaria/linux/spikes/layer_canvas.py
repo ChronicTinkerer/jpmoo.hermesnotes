@@ -25,7 +25,7 @@ object it returns. Three things had to be learned to make that work:
 **The way out is not optional.** The first run had no route back from the
 overlay but a signal sent from a terminal — and the terminal was under the
 overlay. It ended in a restart. So: the overlay drops back by itself after
-`OVERLAY_SECONDS`, Escape inside the page drops it, SIGUSR2 forces the bottom,
+`OVERLAY_SECONDS` with no input, Escape inside the page drops it, SIGUSR2 forces the bottom,
 and the swap key is a compositor bind, which fires whatever is on screen.
 
 Run with `run.sh` beside this file, never from a terminal inside a window.
@@ -40,7 +40,8 @@ import time
 SHELL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shell")
 sys.path.insert(0, SHELL)
 
-from PySide6.QtCore import QObject, QTimer, QUrl
+from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, Qt, QTimer, QUrl
+from PySide6.QtGui import QWheelEvent
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QApplication
@@ -138,6 +139,11 @@ def probe():
         if v != seen["last"]:
             log("page", v)
             seen["last"] = v
+            # An idle timeout, not a deadline: the first one fired in the middle
+            # of a scroll, deep in a zoom, and pulled the canvas out from under
+            # the hand still using it.
+            if state["layer"] == OVERLAY:
+                failsafe.start(OVERLAY_SECONDS * 1000)
         esc = json.loads(v).get("escape", 0)
         if esc > seen["escape"]:
             seen["escape"] = esc
@@ -160,6 +166,54 @@ def down():
     if state["lw"] is not None:
         apply(BOTTOM)
 
+
+class WheelWatch(QObject):
+    """
+    Wheel events at the two places Qt hands them through: the platform window,
+    then the web view's render widget.
+
+    Not an application-wide filter — that segfaulted in PySide's
+    `getWrapperForQObject`, asked to wrap a `QWebEngineUrlRequestJob` mid-
+    construction. Python filters belong on objects you already hold.
+    """
+
+    def eventFilter(self, obj, ev):  # noqa: N802 — Qt's name
+        if ev.type() == QEvent.Type.Wheel:
+            log("qt wheel ->", type(obj).__name__, "angle", ev.angleDelta().toTuple(),
+                "pixel", ev.pixelDelta().toTuple(), "phase", ev.phase().name,
+                "synthetic" if ev.spontaneous() is False else "real")
+        return False
+
+
+watch = WheelWatch(app)
+
+
+def watch_wheel():
+    view.windowHandle().installEventFilter(watch)
+    proxy = view.focusProxy()
+    if proxy is not None:
+        proxy.installEventFilter(watch)
+    log("watching wheel on window and", type(proxy).__name__ if proxy else "no proxy")
+
+
+view.loadFinished.connect(lambda _ok: QTimer.singleShot(500, watch_wheel))
+
+
+def synthetic_wheel():
+    """Does the page's listener hear a wheel at all, with the compositor out of it?"""
+    target = view.focusProxy()
+    if target is None:
+        log("no focus proxy yet")
+        return
+    at = QPointF(400, 300)
+    ev = QWheelEvent(at, view.mapToGlobal(at), QPoint(0, -40), QPoint(0, -120),
+                     Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+                     Qt.ScrollPhase.NoScrollPhase, False)
+    QApplication.sendEvent(target, ev)
+    log("sent synthetic wheel to", type(target).__name__)
+
+
+QTimer.singleShot(4000, synthetic_wheel)
 
 # Signal handlers run between Python bytecodes; the poll timer gives them some.
 signal.signal(signal.SIGUSR1, lambda *_: QTimer.singleShot(0, swap))

@@ -120,8 +120,8 @@ The canvas fork, one surface, two layers:
 - Keyboard focus **on demand**, so it takes keys when clicked into and never
   steals them from a tiled app.
 
-Noctalia's own desktop widgets also live on the desktop and will either be
-covered or have to move. Find out which layer they use before deciding.
+Noctalia's own desktop widgets share the `bottom` layer and are covered by it —
+see *What the layer spike found*.
 
 ### The launcher
 
@@ -303,7 +303,7 @@ Each is an afternoon, and each can change the design:
 
 - ~~**A layer surface from PySide6.**~~ **Run** — see *What the layer spike
   found* below.
-- **Noctalia's desktop widgets** — which layer, and whether they collide.
+- ~~**Noctalia's desktop widgets**~~ — same layer, and covered.
 - **Next-new-window binding** against real Firefox and VS Code, with two
   launches close together.
 - **Resume for the web** — the session file first, since it needs no decision
@@ -336,24 +336,35 @@ holds; nothing has to be ported to WebKit.**
   were made and typed into, and Escape reached the page. Taking the overlay
   takes the keyboard at once; leaving it gives it back. The Super key of a
   compositor bind arrives as a stray `Meta` keydown — harmless, worth ignoring.
-- **Scrolling did not arrive.** Zero wheel events reached the page while
-  scrolling over it. The canvas pans on the wheel, so this is the open finding:
-  next is whether Qt delivers axis events on a layer surface at all, or the
-  page's listener missed them.
+- **Scrolling works, on both layers.** Two-finger pan and pinch arrive as
+  wheel events: 476 reached the page on `bottom` in one short session, and the
+  overlay took them as readily. The first run's zero was not the layer — most
+  likely the scrolling happened over a window. Settled in three steps worth
+  keeping: a synthetic `QWheelEvent` to the view's focus proxy proved the page
+  listens; filters on the window and the focus proxy showed real events
+  arriving from Hyprland; then a run on `bottom` alone. **Do not install a
+  Python event filter on the whole application** to find out — PySide was
+  asked to wrap a `QWebEngineUrlRequestJob` mid-construction and segfaulted.
+  Filter the objects you hold.
 - **The first run had no way back, and ended in a restart.** The overlay
   covered the terminal the only escape was typed in. So: a compositor bind
   swaps (Super+Alt+C — it fires whatever covers the screen), Escape in the
   page drops it, it drops by itself after twenty seconds, and SIGUSR2 forces
   it down. **The real canvas ships with the bind and the timeout, not without
-  them.**
+  them.** And the timeout is **idle**, not a deadline: the first version
+  fired twenty seconds after the swap, in the middle of a scroll deep in a
+  zoom, and took the canvas out from under the hand using it.
 - **Signal it by pid.** `pkill -f layer_canvas.py` also matches the shell that
   runs it — it killed the agent's own shell, and a bind's `sh -c` would be next.
 - **It is the real Home canvas.** The spike reads and writes
   `~/.local/share/talaria/canvas.json`, so notes made while testing are there.
 - **Scale looks like every other Qt window here**: the page reports 1.5625,
   because the session sets `QT_SCALE_FACTOR=1.25` over a 1.25 monitor.
-- **Noctalia's desktop widgets are on the same `bottom` layer**, and the canvas
-  is mapped after them. Whether they end up covered is not yet confirmed.
+- **Noctalia's desktop widgets are covered.** They are on the same `bottom`
+  layer and the canvas maps after them, so the clock and battery disappeared
+  under it. The real thing has to choose: draw what they showed on the canvas
+  and retire them, or leave the canvas a hole for them. Not something to
+  decide in a spike.
 
 ## Order
 
