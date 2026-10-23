@@ -293,18 +293,25 @@ when the mirror syncs. `AMBIENT.md`'s "only the daemon knows Hermes exists" was
 about the desktop's sensors and surfaces; Morgan is a peer client of Hermes, not
 one of those.
 
-### Open questions this raises
+### Decided, 2026-10-23
 
-- **Canvas Chat and Morgan are two chats.** `canvasagent.ts` is Talaria's own
-  chat, deliberately able to do nothing but build and edit a canvas. With Morgan
-  central, two conversational surfaces on one desktop is one too many. The
-  likely answer: canvas editing becomes **tools** on the daemon's MCP, Morgan
-  calls them, and Canvas Chat's panel retires — but Canvas Chat is a feature the
-  owner asked for specifically, so this is the owner's call, not a refactor to
-  slip in.
-- **Glance and Morgan overlap.** Glance reads the focused window and finds
-  related blocks; Morgan answers "what am I looking at." They may want to be one
-  gesture with two halves — the reading and the conversation about it.
+- **One chat, and it is Morgan.** Talaria has two conversational surfaces
+  today — *Ask Hermes Notes* (`ui/assistant.html`, Meta+Shift+A, the one that
+  streams) and Canvas Chat (`canvasagent.ts`, deliberately able to do nothing
+  but build and edit a canvas). Both retire. What Canvas Chat could do becomes
+  **tools** on the daemon's MCP, and Morgan calls them; what Ask could answer,
+  Morgan answers through Hermes' MCP. `canvasagent.ts`'s boundary was the
+  feature — a chat that cannot change the library by a second route — and the
+  tools keep it: canvas tools write canvases, and Morgan's library writes go
+  through Hermes, as they already do.
+- **Glance goes.** Not merged into Morgan — removed. "What am I looking at" is
+  answered from structured context, and the screen-reading ladder (`grim` +
+  `tesseract`, AT-SPI, the primary selection, the synthetic copy) does not come
+  across. Its hard-won findings stay in `CLAUDE.md` for whatever reads a screen
+  next.
+
+### Still open
+
 - **The repository is still `heyclaude`**, its command `heyclaude`, its unit
   `heyclaude.service`. Renaming them to Morgan is its own change in its own
   repository.
@@ -334,9 +341,9 @@ above; resume needs the URL you ended on, and a browser tells the compositor
 only its title. Three candidates:
 
 1. **A small extension** reporting each window's tabs to the daemon. Cleanest,
-   and the only one that brings back *all* the tabs — but it reverses the
-   decision recorded under *Still open* not to build Glance's rung 5. The
-   owner's call.
+   and the only one that brings back *all* the tabs. Glance's rung 5 was this
+   extension and was never built; with Glance gone, that decision no longer
+   stands in the way, but adding an extension is still the owner's call.
 2. **Firefox's session file** (`sessionstore-backups/recovery.jsonlz4`), which
    lists every window's tabs and is rewritten every fifteen seconds or so,
    matched to Hyprland's windows by the active tab's title. No extension; hacky;
@@ -395,7 +402,7 @@ project.
 |---|---|
 | **Talaria daemon** | `packages/daemon`, extended. Projects, canvases, cards, the verbs, the launcher query, the MCP. **Shared with the Mac**, so everything new is additive routes, and `canvas.json` stays where it is — it becomes Home — so the Mac app sees no change. Per-project canvases are new files beside it; `canvas.ts` and `canvasagent.ts` assume one path today and are the first thing that changes. |
 | **Surfaces** | **New.** One PySide6 process under `layer-shell`: canvas, bar, launcher, drawer, notification popups, OSD, power menu, Morgan's voice popup. The canvas fork and the pages are WebEngine views through the shell's own `scheme.py`. |
-| **Shell** | `linux/shell`, as now, for what are ordinary windows: settings, board, New Block, Glance, the Hermes window — and Morgan's conversation when it is kept open as a window. Hyprland work goes through `wm/hypr.py`; KDE's backend answers "no desktop" and nothing else changes there — the one-shell rule stands. |
+| **Shell** | `linux/shell`, as now, for what are ordinary windows: settings, board, New Block, the Hermes window — and Morgan's conversation when it is kept open as a window. Hyprland work goes through `wm/hypr.py`; KDE's backend answers "no desktop" and nothing else changes there — the one-shell rule stands. |
 | **Morgan** | `heyclaude.service`, unchanged in kind — locally now, as a satellite of the home server later. |
 | **Borrowed** | `hypridle` → `hyprlock`, `hyprpolkitagent`, and `mako` until Talaria holds the notification bus. |
 | **Hyprland config** | `talaria.conf`, written by `install.sh`: the binds (launcher, overlay, volume, brightness, Morgan's talk key), workspace rules, and the `exec-once` lines. `hyprland.conf` stays the user's. |
