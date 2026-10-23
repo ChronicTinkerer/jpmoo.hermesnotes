@@ -39,9 +39,8 @@ Four things in one pnpm monorepo, in the order they depend on each other:
   with what was verified.
 - `talaria/AMBIENT.md` — the ambient-desktop design (BTT / AeroSpace / Alfred / local
   inference). Not built.
-- `talaria/linux/DESKTOP.md` — Talaria as the whole desktop on Hyprland, with
-  no shell underneath and Morgan built in: projects as canvases and workspaces,
-  cards that open apps and blocks, the bar and launcher. Design; one spike run.
+- `talaria/linux/DESKTOP.md` — a pointer: the desktop plan that grew here is now
+  its own project, Talaris (`jpmoo/talaris`).
 - `DEFECTS.md` — open defects and doc drift found by review, with the reasoning.
 
 ## Naming collision, worth knowing before you trip on it

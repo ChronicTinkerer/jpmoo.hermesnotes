@@ -902,8 +902,8 @@ Named rather than implied, in the order they cost something.
   panel, was built and then **removed** at the owner's request — once Glance
   read the screen, following the focus meant photographing every window passed
   through; see *The screen is the main answer now*. #4, workspace
-  binding, was skipped — nobody here worked in workspaces. `DESKTOP.md` brings
-  it back as the way projects run; that is a design, not yet built. #5, background
+  binding, was skipped — nobody here worked in workspaces. The desktop plan
+  that brought it back became its own project, Talaris; see `DESKTOP.md`. #5, background
   inference, is done: `packages/daemon/src/propose.ts`, a queue at
   `GET /proposals`, and Meta+Shift+I to read it — waiting and dismissed on two
   tabs, because a dismissal is kept rather than deleted and "no" is a decision
