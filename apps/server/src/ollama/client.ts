@@ -47,12 +47,22 @@ export async function listModels(url: string): Promise<OllamaModel[]> {
   }));
 }
 
+/**
+ * The most text sent to be embedded at once. An embedding model takes its
+ * whole input in one batch, and Ollama's is 2048 tokens: a longer note was
+ * refused ("input is too large to process"), never stamped as embedded, and so
+ * sent again on every tick of the embedding worker, all day. Six thousand
+ * characters is about 1500 tokens of prose, inside the batch with room to
+ * spare, and the opening of a long note is what its embedding is mostly about.
+ */
+export const EMBED_MAX_CHARS = 6000;
+
 /** POST /api/embeddings — single prompt → vector. */
 export async function embed(url: string, model: string, prompt: string): Promise<number[]> {
   const res = await ollamaFetch(url, "/api/embeddings", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ model, prompt }),
+    body: JSON.stringify({ model, prompt: prompt.slice(0, EMBED_MAX_CHARS) }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
