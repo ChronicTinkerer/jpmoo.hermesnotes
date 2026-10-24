@@ -10,7 +10,7 @@ import { MentionMenu } from "./MentionMenu.tsx";
 
 /**
  * A single-line, mention-aware replacement for a plain text <input>: typing
- * `@` / `#` / `|` opens the same dynamic search dropdown as the note editors,
+ * `@` (or its older alias `|`) / `#` opens the same dynamic search dropdown as the note editors,
  * and picked items render as chips. Unlike the markdown editors, the stored
  * value keeps the RAW compact forms — `#tag`, `@Name_With_Underscores`,
  * `|<block-id>` — which the server scans for tag sync and connections.
@@ -141,21 +141,18 @@ export function MentionTextInput({
   const menuOpen = useRef(false);
   const lastEmit = useRef(value);
 
-  // `@` picks are stored by NAME (raw `@Name` form), so rewrite their href
-  // from block:<id> to person:<name> before the chip is inserted. Only those:
-  // a placeholder chosen under `@` (which is what the menu offers when there's
-  // no Person type to pick from) is not a person, and rewriting it as one made
-  // it a mention of somebody who doesn't exist.
-  const wrap = (s: MentionState): MentionState =>
-    s.char === "@"
-      ? {
-          ...s,
-          select: (item) =>
-            item.href.startsWith("block:")
-              ? s.select({ label: item.label, href: `person:${item.label.replace(/ /g, "_")}` })
-              : s.select(item),
-        }
-      : s;
+  // People are stored by NAME (raw `@Name` form), so rewrite a person pick's
+  // href from block:<id> to person:<name> before the chip is inserted. Only
+  // those: `@` now links anything, and a task or note picked there is stored by
+  // id (`|<id>`) as it always was; a placeholder is not a person either, and
+  // rewriting one as a person made it a mention of somebody who doesn't exist.
+  const wrap = (s: MentionState): MentionState => ({
+    ...s,
+    select: (item) =>
+      item.person && item.href.startsWith("block:")
+        ? s.select({ label: item.label, href: `person:${item.label.replace(/ /g, "_")}` })
+        : s.select(item),
+  });
   const handlers = useMemo<MentionHandlers>(
     () => ({
       onOpen: (s) => setSug(wrap(s)),

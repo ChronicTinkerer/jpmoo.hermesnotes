@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { applyPatch, datedInRange, planConversion, filterQuerySchema, inlineMentions, isComplete, nextSpan, normalizeFilter, oneLineLabel, periodicKindOf, recurrenceContinues, recurrenceSchema, stripBlankDates, TEMPLATE_MARKER, type PropertySchema } from "@hermes/shared";
+import { applyPatch, datedInRange, planConversion, blockIdTokens, filterQuerySchema, inlineMentions, isComplete, nextSpan, normalizeFilter, oneLineLabel, periodicKindOf, recurrenceContinues, recurrenceSchema, stripBlankDates, TEMPLATE_MARKER, type PropertySchema } from "@hermes/shared";
 import { attachmentBlobs,
   attachments, blocks, blockTags, blockTypes, memberships, series, tags, userSettings } from "@hermes/db";
 import { db } from "../db.js";
@@ -1429,10 +1429,13 @@ export async function blockRoutes(app: FastifyInstance): Promise<void> {
               // not a reference (edges surface via canvasConnections instead).
               sql`${blocks.collectionKind} IS DISTINCT FROM 'canvas'`,
             ),
-            sql`${blocks.content} LIKE ${`%block:${id}%`}`,
-            sql`${blocks.properties}::text LIKE ${`%block:${id}%`}`,
-            // Raw `|<id>` mention in a title/text field.
-            sql`${blocks.properties}::text LIKE ${`%|${id}%`}`,
+            // `block:<id>` links and raw `|<id>` mentions, in the body or any
+            // field — `|<id>` included in the body, which is where older notes
+            // carry it.
+            ...blockIdTokens(id).flatMap((tok) => [
+              sql`${blocks.content} LIKE ${`%${tok}%`}`,
+              sql`${blocks.properties}::text LIKE ${`%${tok}%`}`,
+            ]),
             /*
              * Raw `@Name` mention of this block's title (underscores = spaces).
              *

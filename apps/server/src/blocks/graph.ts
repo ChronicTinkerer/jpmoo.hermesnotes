@@ -1,7 +1,7 @@
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { blockTypes, blocks, memberships } from "@hermes/db";
 import type { FilterQuery, PropertySchema } from "@hermes/shared";
-import { inlineMentions, oneLineLabel, textsOf } from "@hermes/shared";
+import { blockIdTokens, inlineMentions, oneLineLabel, textsOf } from "@hermes/shared";
 import { db } from "../db.js";
 import { runQuery } from "../collections/query.js";
 
@@ -277,9 +277,12 @@ async function neighborsOf(
   // Inbound references: blocks that point at any frontier id via a bare-id
   // property, a `block:`/`|` link, or an `@title` mention.
   const conds = [
-    ...frontier.map((fid) => sql`${blocks.properties}::text LIKE ${`%block:${fid}%`}`),
-    ...frontier.map((fid) => sql`${blocks.properties}::text LIKE ${`%|${fid}%`}`),
-    ...frontier.map((fid) => sql`${blocks.content} LIKE ${`%block:${fid}%`}`),
+    ...frontier.flatMap((fid) =>
+      blockIdTokens(fid).flatMap((tok) => [
+        sql`${blocks.properties}::text LIKE ${`%${tok}%`}`,
+        sql`${blocks.content} LIKE ${`%${tok}%`}`,
+      ]),
+    ),
     ...frontier.map((fid) => sql`jsonb_path_exists(${blocks.properties}, '$.** ? (@ == $v)', jsonb_build_object('v', ${fid}::text))`),
   ];
   const titles = [...titleOfFront.values()];
@@ -296,7 +299,7 @@ async function neighborsOf(
     const hay = textsOf(props, row.content).join("\n");
     const propText = JSON.stringify(props);
     for (const fid of frontier) {
-      if (hay.includes(`block:${fid}`) || hay.includes(`|${fid}`) || propText.includes(fid)) addOut(row.id, fid);
+      if (blockIdTokens(fid).some((tok) => hay.includes(tok)) || propText.includes(fid)) addOut(row.id, fid);
     }
     // @title inbound
     const inTitle = titleOfFront;

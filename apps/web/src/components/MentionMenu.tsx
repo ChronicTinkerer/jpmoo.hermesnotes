@@ -14,9 +14,10 @@ interface Opt {
   iconKey?: string | null;
   iconColor?: string | null;
   tag?: boolean;
+  person?: boolean; // a Person block, which a title field stores by name
 }
 
-/** Dropdown for the @ / # / | mention triggers. */
+/** Dropdown for the mention triggers: `@` links anything (`|` is an alias), `#` tags. */
 export function MentionMenu({
   state,
   keydown,
@@ -54,42 +55,31 @@ export function MentionMenu({
     const timer = setTimeout(async () => {
       let opts: Opt[] = [];
       try {
-        if (state.char === "@") {
-          if (personType) {
-            // Asked for by name, not as typed. `@` cannot carry a space, so a
-            // two-word name arrives as `Robert_Hohn` — and searching for that
-            // string found nobody, so the menu offered to create a second
-            // Robert Hohn beside the one already there.
-            const rows = await api.get<BlockRef[]>(
-              `/blocks/references?typeId=${personType.id}&q=${encodeURIComponent(q.replace(/_/g, " "))}`,
-            );
-            opts = rows.map((r) => ({
-              key: r.id,
-              label: r.label,
-              href: `block:${r.id}`,
-              iconKey: personType.iconKey,
-              iconColor: personType.iconColor,
-            }));
-          }
-          // Offered only when nobody by that name is already listed: the
-          // name is what identifies a person here, so a second block with the
-          // same one is a duplicate rather than a choice.
-          const wanted = q.replace(/_/g, " ").trim().toLowerCase();
-          const already = opts.some((o) => o.label.replace(/_/g, " ").trim().toLowerCase() === wanted);
-          if (wanted && personType && !already)
-            opts.push({ key: "create", label: `Create person “${q.replace(/_/g, " ")}”`, create: "person", raw: q });
-          // No Person type set up: name it now, decide what it is later.
-          if (q.trim() && !personType)
-            opts.push({
-              key: "placeholder",
-              label: `Note “${q.replace(/_/g, " ")}” for later`,
-              create: "placeholder",
-              raw: q.replace(/_/g, " "),
-            });
-        } else if (state.char === "|") {
-          const rows = await api.get<BlockSearchResult[]>(
-            `/blocks/search?includeCollections=1&q=${encodeURIComponent(q)}`,
-          );
+        if (state.char === "@" || state.char === "|") {
+          // One trigger for linking anything: people first, then every other
+          // block and collection, then the ways to name something new. `|` is
+          // the older trigger for "anything but a person" and now opens this
+          // same list, so a hand that still types it loses nothing.
+          //
+          // Asked for by name, not as typed. The trigger cannot carry a space,
+          // so a two-word name arrives as `Robert_Hohn` — and searching for
+          // that string found nobody, so the menu offered to create a second
+          // Robert Hohn beside the one already there.
+          const named = q.replace(/_/g, " ").trim();
+          const [people, rows] = await Promise.all([
+            personType
+              ? api.get<BlockRef[]>(`/blocks/references?typeId=${personType.id}&q=${encodeURIComponent(named)}`)
+              : Promise.resolve([] as BlockRef[]),
+            api.get<BlockSearchResult[]>(`/blocks/search?includeCollections=1&q=${encodeURIComponent(named)}`),
+          ]);
+          const personOpts: Opt[] = people.map((r) => ({
+            key: r.id,
+            label: r.label,
+            href: `block:${r.id}`,
+            person: true,
+            iconKey: personType?.iconKey,
+            iconColor: personType?.iconColor,
+          }));
           // Collections link too; their icon comes from the kind.
           const KIND_ICON: Record<string, string> = {
             document: "file-text",
@@ -102,8 +92,11 @@ export function MentionMenu({
             calendar: "calendar-days",
             rollup: "scroll",
           };
-          opts = rows
-            .filter((r) => r.blockTypeId !== personType?.id)
+          // People are listed above, by the search that reads names; the full
+          // search can turn the same person up again, and once is enough.
+          const seen = new Set(personOpts.map((o) => o.key));
+          const otherOpts: Opt[] = rows
+            .filter((r) => !seen.has(r.id) && r.blockTypeId !== personType?.id)
             .map((r) => {
               const t = types.find((x) => x.id === r.blockTypeId);
               return {
@@ -118,23 +111,19 @@ export function MentionMenu({
                 iconColor: r.collectionKind ? null : t?.iconColor,
               };
             });
-          // Nothing by that name yet. Writing it down shouldn't have to wait
-          // on deciding whether it's a project, a person or an idea — so it
-          // goes in as a placeholder, and clicking it later asks.
-          //
-          // Underscores become spaces, the same as an @name: the trigger can't
-          // take a space, so "Latino_Coalition" is how you're obliged to type a
-          // two-word name — not what you meant to call the thing. Matching on
-          // the spaced form too, so a block that already goes by that name is
-          // offered instead of being quietly duplicated.
-          const named = q.trim().replace(/_/g, " ");
-          if (named && !rows.some((r) => r.label.toLowerCase() === named.toLowerCase()))
-            opts.push({
-              key: "placeholder",
-              label: `Note “${named}” for later`,
-              create: "placeholder",
-              raw: named,
-            });
+          opts = [...personOpts, ...otherOpts];
+          // The new options go last, and only when nothing listed already goes
+          // by that name: the name is what identifies a thing here, so a second
+          // block with the same one is a duplicate rather than a choice. A
+          // person, when there is a Person type to make one of; otherwise a
+          // placeholder — named now, decided later, and clicking it asks.
+          const wanted = named.toLowerCase();
+          const already = opts.some((o) => o.label.replace(/_/g, " ").trim().toLowerCase() === wanted);
+          if (wanted && !already) {
+            if (personType)
+              opts.push({ key: "create", label: `New person “${named}”`, create: "person", raw: named });
+            opts.push({ key: "placeholder", label: `New: “${named}” for later`, create: "placeholder", raw: named });
+          }
         } else {
           const tags = await api.get<{ name: string }[]>("/tags");
           const ql = q.toLowerCase();
@@ -161,7 +150,7 @@ export function MentionMenu({
 
   const choose = async (opt: Opt) => {
     if (opt.href) {
-      state.select({ label: opt.label, href: opt.href });
+      state.select({ label: opt.label, href: opt.href, ...(opt.person ? { person: true } : {}) });
     } else if (opt.create === "person" && personType) {
       const name = (opt.raw ?? "").replace(/_/g, " ").trim();
       try {
@@ -169,7 +158,7 @@ export function MentionMenu({
           blockTypeId: personType.id,
           properties: { title: name },
         });
-        state.select({ label: name, href: `block:${b.id}` });
+        state.select({ label: name, href: `block:${b.id}`, person: true });
       } catch {
         /* ignore */
       }

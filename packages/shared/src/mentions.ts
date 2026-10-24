@@ -21,6 +21,22 @@
 /** `block:<uuid>` and the bare `|<uuid>` form a mention chip leaves behind. */
 const blockLink = () => /block:([0-9a-fA-F-]{36})|\|([0-9a-fA-F-]{36})/g;
 
+/**
+ * The literal strings that name a block by id in stored text, for a backlink
+ * search to look for.
+ *
+ * Both forms, in the body and in properties alike. The inbound queries once
+ * looked for `|<id>` only in properties, while `inlineMentions` read it from the
+ * body too — so a note whose body said `|<id>` linked out to that block and the
+ * block never showed the note coming back. One list, so the directions agree.
+ */
+export const blockIdTokens = (id: string): string[] => [`block:${id}`, `|${id}`];
+
+/** Whether a block's prose names `id` — the check a backlink prefilter answers to. */
+export function namesBlock(properties: Record<string, unknown>, content: string | null, id: string): boolean {
+  return inlineMentions(properties, content).ids.includes(id);
+}
+
 /** `@Some_Name` — underscores stand in for the spaces in a title. */
 const atName = () => /(^|\s)@([A-Za-z0-9][\w-]*)/g;
 

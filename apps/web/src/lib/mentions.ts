@@ -8,6 +8,8 @@ export type MentionChar = "@" | "#" | "|";
 export interface MentionItem {
   label: string; // display text of the link
   href: string; // block:<id> or tag:<name>
+  /** Picked as a person — a title field stores those by name (`@Name`). */
+  person?: boolean;
 }
 
 export interface MentionState {
@@ -26,8 +28,9 @@ export interface MentionHandlers {
 }
 
 /**
- * Inline mentions for the markdown editors: `@` (people), `#` (tags), `|` (any
- * other type). Each trigger opens a React-rendered dropdown (driven via
+ * Inline mentions for the markdown editors: `@` (anything — people first, then
+ * every other block), `#` (tags). `|` is the older trigger for non-people and
+ * opens the same list as `@`, kept so the habit still works. Each trigger opens a React-rendered dropdown (driven via
  * `handlers`); picking an item inserts a markdown link so it round-trips.
  */
 export const Mentions = Extension.create<{ handlers: MentionHandlers | null }>({
