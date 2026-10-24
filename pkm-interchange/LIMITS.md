@@ -30,14 +30,44 @@ into an API for one product.
 
 ## Open
 
-Nothing, today. The one that was here — an attachment that could be named and
-not carried — is the first entry below.
+Two, both found 2026-10-24 by the third client: Talaris, building an entity
+store of its own — people, events, notes — on the format rather than on Hermes.
+The prediction the empty list made ("the next thing that gets built is where
+the next entry comes from") held on the first afternoon.
 
-Which is worth one sentence of caution rather than any satisfaction: an empty
-list here means the two clients that have been built found everything they
-needed, and both of them were built against the same producer. It does not mean
-the format is finished. The next thing that gets built is where the next entry
-comes from.
+### `contact` and `event` name a profile and almost no slots
+
+**Found by building.** `task` says what its slots are — `title`, `start`,
+`due`, `status`, `completeValues` — and the checker reads them. `contact` and
+`event` are names on the v0 list with nothing defined under them beyond what a
+fixture happens to show (`event`'s `title` and `start`). Talaris's Person type
+maps `title`, `email` and `phone`, and its Event `title`, `start`, `end` and
+`location`; those are guesses at the vocabulary, and a guess is exactly what
+the format exists to prevent. Nothing is lost — the fields are declared and
+travel whole — but a stranger cannot know which of a contact's fields is *the*
+email without being told, and today nothing tells it.
+
+**What would close it:** the slots written down, as `task`'s are. For
+`contact`: `title`, `email`, `phone`, `organization`. For `event`: `title`,
+`start`, `end`, `location`, and — the one that matters most to a client that
+links people to meetings — `attendees`, naming a `reference` field whose
+targets are contacts. Small, additive, and checkable the way `task` is.
+
+### A mention in `content` cannot say where it was found
+
+**Found by building, and by the checker.** A profile may map onto `content` —
+the reserved body slot — and the validator allows it
+(`profile.field-not-declared` skips `content`). But an inline mention must name
+the field it was found in, and that field must be one the type declares
+(`inline.field-not-declared`); `content` is not declared, so a mention in a
+body kept there has nowhere to point. The fixtures avoid it by declaring
+`body` as a field. Talaris now does the same; a producer keeping bodies where
+the format reserves room for them would fail validation for following the
+format.
+
+**What would close it:** `content` accepted as the `field` of an inline
+relation, as it already is as a profile target — one line in the validator,
+one sentence in *Inline references*, one fixture case.
 
 ---
 
