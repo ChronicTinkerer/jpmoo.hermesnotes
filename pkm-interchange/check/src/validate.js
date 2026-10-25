@@ -1,4 +1,4 @@
-import { META_KEYS, REFERENCE_SLOTS, V0_PROFILES } from "./profiles.js";
+import { META_KEYS, REFERENCE_SLOTS, STATES, V0_PROFILES } from "./profiles.js";
 
 /**
  * Structural validation, reported as codes.
@@ -213,6 +213,19 @@ export function validate(envelope) {
         // project — has to be something a reader can follow.
         else if ((REFERENCE_SLOTS[profile] ?? []).includes(key) && (t.fields ?? []).find((f) => f.key === named)?.kind !== "reference") {
           fail("profile.slot-not-a-reference", `types[${i}].profiles.${profile}.${key}`);
+        }
+      }
+      // What each status means (Profiles, "What a status means"): only the status field's own options, only the five
+      // states, and finished exactly as `completeValues` says — two answers to "is it done" that disagree are one too many.
+      if (profile === "task" && map.states && typeof map.states === "object") {
+        const field = (t.fields ?? []).find((f) => f.key === map.status);
+        const options = new Set(field?.options ?? []);
+        const complete = new Set(map.completeValues ?? []);
+        for (const [option, state] of Object.entries(map.states)) {
+          const at = `types[${i}].profiles.task.states.${option}`;
+          if (field && !options.has(option)) fail("profile.state-not-an-option", at);
+          if (!STATES.includes(state)) fail("profile.state-unknown", at);
+          else if ((state === "done" || state === "cancelled") !== complete.has(option)) fail("profile.state-contradicts-complete", at);
         }
       }
     }

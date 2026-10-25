@@ -209,6 +209,14 @@ export function isComplete(
   return typeof current === "string" && (complete as unknown[]).includes(current);
 }
 
+/**
+ * What a task's status may mean, shared with any tool (pkm-interchange,
+ * Profiles: "What a status means"): each status option the type offers maps
+ * onto one of these in the task profile's `states`. The names stay the type's.
+ */
+export const TASK_STATES = ["not-started", "in-progress", "waiting", "done", "cancelled"] as const;
+export type TaskState = (typeof TASK_STATES)[number];
+
 /** The profile vocabulary a consumer can rely on. Anything else is carried, not read. */
 export const PROFILE_NAMES = ["task", "event", "contact", "note", "project"] as const;
 export type ProfileName = (typeof PROFILE_NAMES)[number];
@@ -307,6 +315,12 @@ export function readProfile(
   content?: string | null,
 ): unknown {
   const p = profilesOf(schema, { isText: content !== undefined }).find((x) => x.name === profile);
+  // A task's state: its status, through the type's own `states`. A status given none reads as none — never guessed from its name.
+  if (profile === "task" && key === "state") {
+    const status = readProfile(schema, properties, "status", "task", content);
+    const state = typeof status === "string" ? (p?.map.states as Record<string, unknown> | undefined)?.[status] : undefined;
+    return (TASK_STATES as readonly unknown[]).includes(state) ? state : undefined;
+  }
   const spec = p?.map[key];
   // The one name that isn't a field: a text block keeps its body in `content`,
   // and a profile that wants the body has to be able to say so.

@@ -19,6 +19,8 @@ export interface Invalid {
 const PROFILES = ["task", "event", "contact", "note", "journal", "project"];
 /** The slots that point at other things — a task's project, a meeting's people — and so must name a reference. */
 const REFERENCE_SLOTS: Record<string, string[]> = { task: ["project"], event: ["attendees", "organizer"] };
+/** The five a task status may mean (Profiles, "What a status means"). */
+const STATES = ["not-started", "in-progress", "waiting", "done", "cancelled"];
 
 /**
  * Every attachment value in an envelope, wherever it sits.
@@ -146,6 +148,21 @@ export function validateEnvelope(envelope: unknown): { valid: boolean; errors: I
         ) {
           // A name in a text field cannot be followed, and following it is what the slot is for.
           fail("profile.slot-not-a-reference", `types[${i}].profiles.${profile}.${key}`);
+        }
+      }
+      // What each status means: only the status field's own options, only the five states, and finished
+      // exactly as `completeValues` says — two answers to "is it done" that disagree are one too many.
+      const states = (map as { states?: unknown }).states;
+      if (profile === "task" && states && typeof states === "object") {
+        const status = (map as { status?: unknown }).status;
+        const field = (t.fields ?? []).find((f) => f.key === status) as { options?: string[] } | undefined;
+        const options = new Set(field?.options ?? []);
+        const complete = new Set(((map as { completeValues?: unknown }).completeValues as string[] | undefined) ?? []);
+        for (const [option, state] of Object.entries(states as Record<string, unknown>)) {
+          const at = `types[${i}].profiles.task.states.${option}`;
+          if (field && !options.has(option)) fail("profile.state-not-an-option", at);
+          if (typeof state !== "string" || !STATES.includes(state)) fail("profile.state-unknown", at);
+          else if ((state === "done" || state === "cancelled") !== complete.has(option)) fail("profile.state-contradicts-complete", at);
         }
       }
     }

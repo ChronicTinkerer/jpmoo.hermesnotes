@@ -522,6 +522,406 @@
         "valid": true
       },
       "why": "The companion to the case above: a `many` reference to people is exactly what `attendees` wants. Whether the targets are contacts is their type's to say, not this one's — a meeting can invite a room, and a reader that finds no `contact` on the target reads it as whatever it is."
+    },
+    {
+      "id": "profile/a-status-means-its-declared-state",
+      "level": 1,
+      "op": "read",
+      "given": {
+        "types": [
+          {
+            "id": "t_job",
+            "name": "Job",
+            "fields": [
+              {
+                "key": "title",
+                "kind": "text"
+              },
+              {
+                "key": "stage",
+                "kind": "enum",
+                "options": [
+                  "todo",
+                  "doing",
+                  "on hold",
+                  "done",
+                  "dropped"
+                ]
+              }
+            ],
+            "profiles": {
+              "task": {
+                "title": "title",
+                "status": "stage",
+                "completeValues": [
+                  "done",
+                  "dropped"
+                ],
+                "states": {
+                  "todo": "not-started",
+                  "doing": "in-progress",
+                  "on hold": "waiting",
+                  "done": "done",
+                  "dropped": "cancelled"
+                }
+              }
+            }
+          }
+        ],
+        "objects": [
+          {
+            "id": "o_1",
+            "type": "t_job",
+            "properties": {
+              "title": "Fix the gate",
+              "stage": "doing"
+            }
+          }
+        ]
+      },
+      "expect": "in-progress",
+      "why": "The name is the producer's; what it means is shared. A consumer that knows only the five states reads \"doing\" as in progress without ever having heard the word.",
+      "args": {
+        "key": "state"
+      }
+    },
+    {
+      "id": "profile/a-dropped-task-is-cancelled-not-done",
+      "level": 1,
+      "op": "read",
+      "given": {
+        "types": [
+          {
+            "id": "t_job",
+            "name": "Job",
+            "fields": [
+              {
+                "key": "title",
+                "kind": "text"
+              },
+              {
+                "key": "stage",
+                "kind": "enum",
+                "options": [
+                  "todo",
+                  "doing",
+                  "on hold",
+                  "done",
+                  "dropped"
+                ]
+              }
+            ],
+            "profiles": {
+              "task": {
+                "title": "title",
+                "status": "stage",
+                "completeValues": [
+                  "done",
+                  "dropped"
+                ],
+                "states": {
+                  "todo": "not-started",
+                  "doing": "in-progress",
+                  "on hold": "waiting",
+                  "done": "done",
+                  "dropped": "cancelled"
+                }
+              }
+            }
+          }
+        ],
+        "objects": [
+          {
+            "id": "o_2",
+            "type": "t_job",
+            "properties": {
+              "title": "Old plan",
+              "stage": "dropped"
+            }
+          }
+        ]
+      },
+      "expect": "cancelled",
+      "why": "Finished either way, and not the same: carried as done, a task somebody abandoned arrives in another tool as work that was completed.",
+      "args": {
+        "key": "state"
+      }
+    },
+    {
+      "id": "profile/a-status-with-no-state-means-nothing-declared",
+      "level": 1,
+      "op": "read",
+      "given": {
+        "types": [
+          {
+            "id": "t_job",
+            "name": "Job",
+            "fields": [
+              {
+                "key": "title",
+                "kind": "text"
+              },
+              {
+                "key": "stage",
+                "kind": "enum",
+                "options": [
+                  "todo",
+                  "doing",
+                  "on hold",
+                  "done",
+                  "dropped"
+                ]
+              }
+            ],
+            "profiles": {
+              "task": {
+                "title": "title",
+                "status": "stage",
+                "completeValues": [
+                  "done",
+                  "dropped"
+                ],
+                "states": {
+                  "todo": "not-started",
+                  "done": "done",
+                  "dropped": "cancelled"
+                }
+              }
+            }
+          }
+        ],
+        "objects": [
+          {
+            "id": "o_3",
+            "type": "t_job",
+            "properties": {
+              "title": "Paint",
+              "stage": "doing"
+            }
+          }
+        ]
+      },
+      "expect": null,
+      "why": "An option the producer gave no state is undeclared, and absent is the honest reading. \"doing\" looks like in progress; guessing so from the word is the guess this format exists to remove.",
+      "args": {
+        "key": "state"
+      }
+    },
+    {
+      "id": "profile/a-state-names-an-option",
+      "level": 1,
+      "op": "validate",
+      "given": {
+        "types": [
+          {
+            "id": "t_job",
+            "name": "Job",
+            "fields": [
+              {
+                "key": "title",
+                "kind": "text"
+              },
+              {
+                "key": "stage",
+                "kind": "enum",
+                "options": [
+                  "todo",
+                  "doing",
+                  "on hold",
+                  "done",
+                  "dropped"
+                ]
+              }
+            ],
+            "profiles": {
+              "task": {
+                "title": "title",
+                "status": "stage",
+                "completeValues": [
+                  "done",
+                  "dropped"
+                ],
+                "states": {
+                  "todo": "not-started",
+                  "working": "in-progress",
+                  "done": "done",
+                  "dropped": "cancelled"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "valid": false,
+        "errors": [
+          {
+            "code": "profile.state-not-an-option"
+          }
+        ]
+      },
+      "why": "A state for an option the status field does not have describes a status no task can hold — and hides that the real one, here \"doing\", has none."
+    },
+    {
+      "id": "profile/a-state-is-one-of-the-five",
+      "level": 1,
+      "op": "validate",
+      "given": {
+        "types": [
+          {
+            "id": "t_job",
+            "name": "Job",
+            "fields": [
+              {
+                "key": "title",
+                "kind": "text"
+              },
+              {
+                "key": "stage",
+                "kind": "enum",
+                "options": [
+                  "todo",
+                  "doing",
+                  "on hold",
+                  "done",
+                  "dropped"
+                ]
+              }
+            ],
+            "profiles": {
+              "task": {
+                "title": "title",
+                "status": "stage",
+                "completeValues": [
+                  "done",
+                  "dropped"
+                ],
+                "states": {
+                  "todo": "not-started",
+                  "doing": "started",
+                  "done": "done",
+                  "dropped": "cancelled"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "valid": false,
+        "errors": [
+          {
+            "code": "profile.state-unknown"
+          }
+        ]
+      },
+      "why": "The five are the vocabulary; a sixth word is a private one, and a consumer reading it has nothing to match it to."
+    },
+    {
+      "id": "profile/finished-states-agree-with-complete-values",
+      "level": 1,
+      "op": "validate",
+      "given": {
+        "types": [
+          {
+            "id": "t_job",
+            "name": "Job",
+            "fields": [
+              {
+                "key": "title",
+                "kind": "text"
+              },
+              {
+                "key": "stage",
+                "kind": "enum",
+                "options": [
+                  "todo",
+                  "doing",
+                  "on hold",
+                  "done",
+                  "dropped"
+                ]
+              }
+            ],
+            "profiles": {
+              "task": {
+                "title": "title",
+                "status": "stage",
+                "completeValues": [
+                  "done"
+                ],
+                "states": {
+                  "todo": "not-started",
+                  "doing": "in-progress",
+                  "on hold": "waiting",
+                  "done": "done",
+                  "dropped": "cancelled"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "valid": false,
+        "errors": [
+          {
+            "code": "profile.state-contradicts-complete"
+          }
+        ]
+      },
+      "why": "\"dropped\" is cancelled — finished — and not in completeValues: one declaration says the task is open and the other that it is closed, and a consumer has to pick which to believe."
+    },
+    {
+      "id": "profile/states-declared-whole-are-valid",
+      "level": 1,
+      "op": "validate",
+      "given": {
+        "types": [
+          {
+            "id": "t_job",
+            "name": "Job",
+            "fields": [
+              {
+                "key": "title",
+                "kind": "text"
+              },
+              {
+                "key": "stage",
+                "kind": "enum",
+                "options": [
+                  "todo",
+                  "doing",
+                  "on hold",
+                  "done",
+                  "dropped"
+                ]
+              }
+            ],
+            "profiles": {
+              "task": {
+                "title": "title",
+                "status": "stage",
+                "completeValues": [
+                  "done",
+                  "dropped"
+                ],
+                "states": {
+                  "todo": "not-started",
+                  "doing": "in-progress",
+                  "on hold": "waiting",
+                  "done": "done",
+                  "dropped": "cancelled"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "valid": true
+      },
+      "why": "The shape above, every rule kept: worth stating so a validator that refuses states altogether is caught too."
     }
   ]
 }

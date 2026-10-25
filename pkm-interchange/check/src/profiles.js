@@ -17,6 +17,9 @@ export const V0_PROFILES = ["task", "event", "contact", "note", "journal", "proj
  */
 export const REFERENCE_SLOTS = { task: ["project"], event: ["attendees", "organizer"] };
 
+/** What a task's status may mean, shared (Profiles, "What a status means"): the producer's options map onto these. */
+export const STATES = ["not-started", "in-progress", "waiting", "done", "cancelled"];
+
 /**
  * Which v0 profiles a type declares, in the order it declared them.
  *
@@ -41,6 +44,12 @@ export function profilesOf(type) {
 export function read(type, object, key, profile = "task") {
   const map = type?.profiles?.[profile];
   if (!map) return undefined;
+  // A task's state: its status, through the producer's own `states`. An option it gives no state reads as none.
+  if (profile === "task" && key === "state") {
+    const status = read(type, object, "status", "task");
+    const state = status === undefined ? undefined : map.states?.[status];
+    return STATES.includes(state) ? state : undefined;
+  }
   const spec = map[key];
   if (spec === undefined || spec === null) return undefined;
   const props = object?.properties ?? {};

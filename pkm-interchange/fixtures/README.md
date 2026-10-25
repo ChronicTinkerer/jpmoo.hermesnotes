@@ -195,6 +195,9 @@ and the write-only names are `placement.region-not-declared`,
 | `conformance.missing-roles` | a level claimed without saying for which role |
 | `conformance.binding-required` | `operate` claimed with no live binding |
 | `conformance.undeclared-feature` | the data uses a feature the manifest omits |
+| `profile.state-not-an-option` | a task's `states` naming a value the status field does not offer |
+| `profile.state-unknown` | a state other than `not-started`, `in-progress`, `waiting`, `done`, `cancelled` |
+| `profile.state-contradicts-complete` | `done`/`cancelled` and `completeValues` disagreeing about an option |
 | `attachment.hash-missing` | an attachment carrying `bytes` and no `sha256` |
 | `attachment.hash-malformed` | a `sha256` that is not 64 lowercase hex |
 | `attachment.bytes-empty` | `"bytes": ""` — omit rather than send empty |

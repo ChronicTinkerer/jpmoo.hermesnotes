@@ -18,6 +18,35 @@ const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "fixt
 
 const MUTANTS = [
   {
+    // A status's meaning read off the status itself: whatever the option is called.
+    name: "a task's state is read as its raw status",
+    caught: "profile/a-status-means-its-declared-state",
+    patch: (a) => ({ ...a, read: (t, o, key, profile) => (key === "state" ? a.read(t, o, "status", profile) : a.read(t, o, key, profile)) }),
+  },
+  {
+    // The guess the format exists to remove: a status with no declared state given one from its name.
+    name: "an undeclared state is guessed from the status's name",
+    caught: "profile/a-status-with-no-state-means-nothing-declared",
+    patch: (a) => ({ ...a, read: (t, o, key, profile) => {
+      const got = a.read(t, o, key, profile);
+      if (key !== "state" || got !== undefined) return got;
+      const s = String(a.read(t, o, "status", profile) ?? "");
+      return /doing|progress/i.test(s) ? "in-progress" : got;
+    } }),
+  },
+  {
+    // A sixth state let through: a private word passed off as the shared vocabulary.
+    name: "a state outside the five validates",
+    caught: "profile/a-state-is-one-of-the-five",
+    patch: (a) => ({ ...a, validate: (env) => { const v = a.validate(env); const errors = v.errors.filter((e) => e.code !== "profile.state-unknown"); return { valid: errors.length === 0, errors }; } }),
+  },
+  {
+    // Two answers to "is it finished" allowed to disagree.
+    name: "states and completeValues may contradict",
+    caught: "profile/finished-states-agree-with-complete-values",
+    patch: (a) => ({ ...a, validate: (env) => { const v = a.validate(env); const errors = v.errors.filter((e) => e.code !== "profile.state-contradicts-complete"); return { valid: errors.length === 0, errors }; } }),
+  },
+  {
     // The gap the body rule closed: a patch is properties and nothing else, so
     // a note's words are written once at create and never again.
     name: "a patch ignores the body",

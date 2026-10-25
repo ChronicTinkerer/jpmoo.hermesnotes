@@ -167,6 +167,11 @@ export function TypeEditor({
     initial?.propertySchema?.complete_values ?? [],
   );
   const [defaultValue, setDefaultValue] = useState(initial?.propertySchema?.default_value ?? "");
+  // What each status means to other apps (pkm-interchange: the task profile's `states`) — chosen beside
+  // each option, only among the states its "complete" box allows, so the two can never disagree.
+  const [states, setStates] = useState<Record<string, string>>(
+    ((initial?.propertySchema?.profiles as Record<string, { states?: Record<string, string> }> | undefined)?.task?.states ?? {}) as Record<string, string>,
+  );
   // What it is to other apps: edited below ("What this is, to other apps"),
   // and anything declared that this form has no words for is carried whole.
   const [profiles, setProfiles] = useState<Record<string, Record<string, unknown>>>(
@@ -220,6 +225,11 @@ export function TypeEditor({
   const isText = initial?.isText ?? false;
 
   /** The task profile the status field implies, as Hermes has always worked it out. */
+  /** The meanings given, for the options there are now, each still fitting its "complete" box: `{ states }`, or nothing. */
+  const statesNow = (): { states?: Record<string, string> } => {
+    const kept = Object.fromEntries(statusOptions.filter((o) => STATE_FITS(completeValues.includes(o)).some(([v]) => v === states[o])).map((o) => [o, states[o]!]));
+    return Object.keys(kept).length ? { states: kept } : {};
+  };
   const derivedTask = (): Record<string, unknown> => {
     const bare = {
       fields: fields.map((f, i) => ({ key: f.key.trim(), type: f.type, order: i, includeEmbed: f.includeEmbed })),
@@ -281,11 +291,14 @@ export function TypeEditor({
               // status field, whole, with what was set here (its project) on
               // top — declaring it must not cost it its title or its dates.
               name === "task" && activeStatus
-                ? { ...derivedTask(), ...map, status: activeStatus.key, completeValues }
+                ? { ...derivedTask(), ...map, status: activeStatus.key, completeValues, ...statesNow() }
                 : map,
             ]),
           )
-        : undefined,
+        : statesNow().states && activeStatus
+          // Meanings given and the task profile not otherwise declared: declared now, to carry them.
+          ? { task: { ...derivedTask(), status: activeStatus.key, completeValues, ...statesNow() } }
+          : undefined,
     };
 
     setBusy(true);
@@ -512,6 +525,22 @@ export function TypeEditor({
                     />
                     <span className="hint">complete</span>
                   </label>
+                  <select
+                    className="f-type status-state"
+                    title="What this status means to other apps — so a sync can carry it"
+                    value={STATE_FITS(completeValues.includes(o)).some(([v]) => v === states[o]) ? states[o] : ""}
+                    onChange={(e) => setStates((prev) => {
+                      const next = { ...prev };
+                      if (e.target.value) next[o] = e.target.value;
+                      else delete next[o];
+                      return next;
+                    })}
+                  >
+                    <option value="">means… (not said)</option>
+                    {STATE_FITS(completeValues.includes(o)).map(([v, label]) => (
+                      <option key={v} value={v}>{label}</option>
+                    ))}
+                  </select>
                   <label className="row" style={{ gap: 5 }}>
                     <input
                       type="radio"
@@ -599,6 +628,10 @@ export function TypeEditor({
  * section never reads as though tasks were the one thing that cannot be said;
  * its start, due date and project can be matched to other fields here.
  */
+/** The states a status may mean, by whether it completes a task: finished ones end it, the rest do not. */
+const STATE_FITS = (complete: boolean): [string, string][] =>
+  complete ? [["done", "Done"], ["cancelled", "Cancelled"]] : [["not-started", "Not started"], ["in-progress", "In progress"], ["waiting", "Waiting"]];
+
 const TASK_SLOTS: [string, string, SlotKind][] = [["title", "Name", "words"], ["start", "Available", "when"], ["due", "Due", "when"], ["project", "Project", "ref"]];
 
 function ProfilesSection({

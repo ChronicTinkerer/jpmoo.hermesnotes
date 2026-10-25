@@ -59,6 +59,39 @@ was not closed with the rest — and each says so at its own end rather than
 here. No count: the one that used to be in this spot drifted from three to ten
 without anybody noticing, which is what a number in prose does.
 
+### A status could say finished and nothing else — closed
+
+**Found by building, 2026-10-25:** the Hermes sync in Talaris. The task
+profile's one status rule was `completeValues`, so the only meaning two tools
+could share was *finished or not*. Talaris's "in progress" had no way to find
+Hermes Notes' equivalent, so a sync could carry nothing between two open
+statuses; and Talaris counts "won't do" as finished, so a task somebody
+dropped arrived in Hermes Notes as one that was done.
+
+**Now:** `states` on the task profile, each status option mapped onto one of
+five — `not-started`, `in-progress`, `waiting`, `done`, `cancelled`. The names
+stay each producer's own; only what they mean is shared. A consumer reads
+`state` through the profile and carries a status as the other tool's first
+option of the same state. Three rules: an option of the status field, one of
+the five, and `done`/`cancelled` exactly the options in `completeValues`. An
+option given no state is undeclared, and a consumer must not guess one from
+its name.
+
+**Why five, and these.** Every task tool met so far — a todo list, a kanban,
+Hermes, Talaris, an outliner with TODO/DOING/DONE — has some of these and none
+with a sixth that the others lack a word for. "Waiting" is the one a plain list
+has no column for, and the one a person most wants to keep when a task moves.
+A vocabulary large enough to say everything is one no two tools map onto alike.
+
+**Additive:** `completeValues` keeps its meaning and its job; a consumer that
+never heard of `states` reads finished exactly as before.
+
+**What it asks of a sync**, said here because it is the reason for the entry:
+a status travels only once both sides have given every option a state, and
+until then the sync carries nothing about it rather than guessing.
+
+→ `fixtures/profile.json`
+
 ### A body could be created and never changed — closed
 
 **Found by building, 2026-10-25:** the Hermes sync plugin in Talaris, adding

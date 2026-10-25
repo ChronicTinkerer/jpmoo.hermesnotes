@@ -255,12 +255,42 @@ that the consumer should look for something like it.
 
 | profile | slots |
 |---|---|
-| `task` | `title`, `status`, `completeValues` (a list of values, not a field), `start`, `due`, `project` |
+| `task` | `title`, `status`, `completeValues` (a list of values, not a field), `states` (a map of values, not a field), `start`, `due`, `project` |
 | `event` | `title`, `start`, `end`, `location`, `attendees`, `organizer`, `body` |
 | `contact` | `title`, `email`, `phone`, `organization`, `role`, `body` |
 | `note` | `title`, `body` |
 | `journal` | `date` — see *The page for a date* |
 | `project` | `title`, `body` |
+
+**What a status means.** A task's `status` is the producer's own field with
+its own options — `todo`, `doing`, `En attente` — and `completeValues` says
+which of them finish a task. That is the one meaning every task tool shares,
+and it is not enough to carry a status between two of them: "in progress" in
+one has no way to find its match in the other, and a task dropped looks the
+same as one done. So a task profile may also say, for each option, which of
+five **states** it is:
+
+```json
+"task": { "status": "status", "completeValues": ["done", "dropped"],
+          "states": { "todo": "not-started", "doing": "in-progress", "on hold": "waiting",
+                      "done": "done", "dropped": "cancelled" } }
+```
+
+`not-started`, `in-progress`, `waiting`, `done`, `cancelled` — and nothing
+else, because a vocabulary any two tools can share has to be small enough that
+both can map onto all of it. The names stay the producer's; only what they mean
+is shared. A consumer reads `state` through the profile as it reads any slot,
+and carries a status to another tool as that tool's first option of the same
+state.
+
+Three rules (`validate`), each because the declaration is otherwise a claim
+nothing backs: a key of `states` is one of the status field's options
+(`profile.state-not-an-option`); a value is one of the five
+(`profile.state-unknown`); and `done` and `cancelled` are exactly the options in
+`completeValues` (`profile.state-contradicts-complete`) — two answers to "is it
+finished" that disagree are one answer too many. An option with no state is
+allowed and says so: its meaning is not declared, and a consumer that needs one
+must not guess it from the name.
 
 `body` may name `content`, the reserved body slot, as `note`'s may. `email` and
 `phone` may name a `many` field: a person with two addresses has two, and the
