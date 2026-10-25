@@ -1,4 +1,4 @@
-import { META_KEYS, V0_PROFILES } from "./profiles.js";
+import { META_KEYS, REFERENCE_SLOTS, V0_PROFILES } from "./profiles.js";
 
 /**
  * Structural validation, reported as codes.
@@ -188,6 +188,11 @@ export function validate(envelope) {
           typeof spec === "string" ? spec : spec && typeof spec === "object" ? spec.field : undefined;
         if (typeof named !== "string" || named === "content") continue;
         if (!declared.has(named)) fail("profile.field-not-declared", `types[${i}].profiles.${profile}.${key}`);
+        // A slot that points at other things — a meeting's people, a task's
+        // project — has to be something a reader can follow.
+        else if ((REFERENCE_SLOTS[profile] ?? []).includes(key) && (t.fields ?? []).find((f) => f.key === named)?.kind !== "reference") {
+          fail("profile.slot-not-a-reference", `types[${i}].profiles.${profile}.${key}`);
+        }
       }
     }
   });

@@ -555,6 +555,15 @@ const MUTANTS = [
     } }),
   },
   {
+    name: "lets a project or a meeting's people be a name in a text field",
+    caught: "profile/a-pointing-slot-must-be-a-reference",
+    patch: (a) => ({ ...a, validate: (e) => {
+      const got = a.validate(e);
+      const kept = got.errors.filter((x) => x.code !== "profile.slot-not-a-reference");
+      return { valid: kept.length === 0, errors: kept };
+    } }),
+  },
+  {
     name: "treats a patch as the whole object",
     caught: "operational/absent-is-not-delete",
     patch: (a) => ({

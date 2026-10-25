@@ -30,28 +30,9 @@ into an API for one product.
 
 ## Open
 
-Two, both found 2026-10-24 by the third client: Talaris, building an entity
-store of its own — people, events, notes — on the format rather than on Hermes.
-The prediction the empty list made ("the next thing that gets built is where
-the next entry comes from") held on the first afternoon.
-
-### `contact` and `event` name a profile and almost no slots
-
-**Found by building.** `task` says what its slots are — `title`, `start`,
-`due`, `status`, `completeValues` — and the checker reads them. `contact` and
-`event` are names on the v0 list with nothing defined under them beyond what a
-fixture happens to show (`event`'s `title` and `start`). Talaris's Person type
-maps `title`, `email` and `phone`, and its Event `title`, `start`, `end` and
-`location`; those are guesses at the vocabulary, and a guess is exactly what
-the format exists to prevent. Nothing is lost — the fields are declared and
-travel whole — but a stranger cannot know which of a contact's fields is *the*
-email without being told, and today nothing tells it.
-
-**What would close it:** the slots written down, as `task`'s are. For
-`contact`: `title`, `email`, `phone`, `organization`. For `event`: `title`,
-`start`, `end`, `location`, and — the one that matters most to a client that
-links people to meetings — `attendees`, naming a `reference` field whose
-targets are contacts. Small, additive, and checkable the way `task` is.
+One, found 2026-10-24 by the third client: Talaris, building an entity store
+of its own — people, events, notes — on the format rather than on Hermes. Its
+companion, `contact` and `event` without slots, is closed below.
 
 ### A mention in `content` cannot say where it was found
 
@@ -77,6 +58,48 @@ Below, with what each cost to answer. Several carry a remainder — the part tha
 was not closed with the rest — and each says so at its own end rather than
 here. No count: the one that used to be in this spot drifted from three to ten
 without anybody noticing, which is what a number in prose does.
+
+### `contact` and `event` named a profile and almost no slots — closed, and `project` with them
+
+**Was:** `task` said what its slots were; `contact` and `event` were names on
+the v0 list with nothing under them beyond what a fixture happened to show.
+Talaris's Person mapped `title`, `email` and `phone` and its Event `title`,
+`start`, `end` and `location` — guesses at a vocabulary, which is what the
+format exists to prevent. And there was no way at all to say *this is a
+project*: Hermes keeps a `project` profile of its own and, failing that, finds
+projects by a type called Project — the guess this codebase otherwise forbids,
+kept "until declaring is the norm".
+
+**Now:** every v0 profile's slots are a table in *Profiles*. `contact` is
+`title`, `email`, `phone`, `organization`, `role`, `body`; `event` is `title`,
+`start`, `end`, `location`, `attendees`, `organizer`, `body`; `project` joins
+the vocabulary with `title` and `body`; and `task` gains `project`. The three
+slots that point at other things — a task's project, a meeting's attendees and
+organizer — must name a `reference` (`profile.slot-not-a-reference`), because a
+name in a text field cannot be followed. Five cases in `fixtures/profile.json`
+and a mutant that lets a text field through.
+
+**Why now, and why it is not a Hermes-shaped answer.** What forced it was a
+sync: a Talaris plugin keeping tasks, projects, events and people in step with
+Hermes, which cannot find a person or a meeting on either side without being
+told which type is which and which field is the address. But the slots are the
+ones both clients already had, and the ones any address book or calendar has —
+`organization` is a text field *or* a reference precisely because Hermes keeps
+organizations as things and an address book keeps them as words. `role` came
+in because both stores carry it; a slot only one of them wanted would have
+stayed out.
+
+**Additive, so `format` does not bump.** A consumer that knows only the old
+vocabulary reads `project` as an unknown profile and carries it, which is what
+it was already obliged to do.
+
+**What is still open:** nothing in the format says that a task's `project` and
+a project's tasks are the same fact seen from two ends — it is one reference,
+read either way, as every reference already is. And a producer whose projects
+are only collections has collections, not projects; *Profiles* says so rather
+than stretching `project` to cover both.
+
+→ `fixtures/profile.json`
 
 ### An attachment could be named and not carried — closed
 

@@ -210,7 +210,7 @@ export function isComplete(
 }
 
 /** The profile vocabulary a consumer can rely on. Anything else is carried, not read. */
-export const PROFILE_NAMES = ["task", "event", "contact", "note"] as const;
+export const PROFILE_NAMES = ["task", "event", "contact", "note", "project"] as const;
 export type ProfileName = (typeof PROFILE_NAMES)[number];
 
 export interface ResolvedProfile {
@@ -276,9 +276,9 @@ export function profilesOf(
  * vocabulary.
  *
  * `profilesOf` filters to what a stranger can consume. This asks the raw
- * question, which is what a surface reaching for a profile of its own needs:
- * `project` is not in v0, and the format's answer to that is to declare it and
- * see whether it earns its place, not to wait for a committee.
+ * question, which is what a surface reaching for a profile of its own needs. A
+ * name outside the vocabulary is the format's way in: `project` was one, was
+ * declared here and used, and earned its place.
  */
 export function declaresProfile(schema: PropertySchema | null | undefined, name: string): boolean {
   return Boolean(schema?.profiles && Object.prototype.hasOwnProperty.call(schema.profiles, name));

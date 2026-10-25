@@ -1,4 +1,4 @@
-import { templateName, type FieldType, type PropertySchema } from "@hermes/shared";
+import { profilesOf, templateName, type FieldType, type PropertySchema } from "@hermes/shared";
 import { useEffect, useState } from "react";
 import { api, ApiError, type Block, type BlockType } from "../api.ts";
 import { useAiConfig } from "../lib/ai-config.tsx";
@@ -109,6 +109,44 @@ function formatOptionSpec(values: string[] | undefined, labels: Record<string, s
 
 const parseOptions = (s: string) => parseOptionSpec(s).values;
 
+/*
+ * What a type is, said to other apps (pkm-interchange, *Profiles*): which of
+ * its fields is a person's email, a meeting's start, a task's project. Hermes
+ * reads none of these itself — a sync reads them, and Talaris, and any tool
+ * that has never heard of Hermes. Nothing is guessed: a slot is set by hand
+ * or not at all, and one left empty says this type has no such thing.
+ *
+ * A slot names a field, or half of a date span. The slots that point at other
+ * things — a meeting's people, a task's project — take only reference fields.
+ */
+type SlotKind = "words" | "when" | "ref" | "wordsOrRef" | "body";
+const PROFILE_SLOTS: Record<string, { label: string; slots: [string, string, SlotKind][] }> = {
+  contact: { label: "A person", slots: [["title", "Name", "words"], ["email", "Email", "words"], ["phone", "Phone", "words"], ["organization", "Organization", "wordsOrRef"], ["role", "Role", "words"], ["body", "About", "body"]] },
+  event: { label: "An event", slots: [["title", "Title", "words"], ["start", "Starts", "when"], ["end", "Ends", "when"], ["location", "Where", "words"], ["attendees", "Who is invited", "ref"], ["organizer", "Organizer", "ref"], ["body", "Description", "body"]] },
+  project: { label: "A project", slots: [["title", "Name", "words"], ["body", "Description", "body"]] },
+};
+const fitsSlot = (f: EditField, kind: SlotKind) =>
+  kind === "ref" ? f.type === "reference"
+  : kind === "wordsOrRef" ? f.type === "text" || f.type === "url" || f.type === "reference"
+  : kind === "body" ? f.type === "longtext" || f.type === "text"
+  : kind === "when" ? f.type === "datetime" || f.type === "date" || f.type === "datespan"
+  : f.type === "text" || f.type === "url" || f.type === "select";
+/** A slot's choices: each field that fits, and each half of a date span. */
+function slotChoices(fields: EditField[], kind: SlotKind): { value: string; label: string }[] {
+  const out: { value: string; label: string }[] = [];
+  for (const f of fields) {
+    if (!f.key.trim() || !fitsSlot(f, kind)) continue;
+    const name = f.label.trim() || f.key;
+    if (kind === "when" && f.type === "datespan") {
+      out.push({ value: JSON.stringify({ field: f.key, part: "start" }), label: `${name} — ${f.startLabel || "start"}` });
+      out.push({ value: JSON.stringify({ field: f.key, part: "end" }), label: `${name} — ${f.endLabel || "end"}` });
+    } else out.push({ value: f.key, label: name });
+  }
+  return out;
+}
+const slotValue = (spec: unknown) => (spec === undefined || spec === null ? "" : typeof spec === "string" ? spec : JSON.stringify(spec));
+const slotSpec = (value: string): unknown => (value.startsWith("{") ? JSON.parse(value) : value);
+
 export function TypeEditor({
   initial,
   onSaved,
@@ -129,12 +167,11 @@ export function TypeEditor({
     initial?.propertySchema?.complete_values ?? [],
   );
   const [defaultValue, setDefaultValue] = useState(initial?.propertySchema?.default_value ?? "");
-  // Carried, not edited. Nothing here asks what a type is — the question is
-  // about interoperability with tools the reader may never touch, and the two
-  // profiles that cannot be worked out from the schema are the two nothing in
-  // Hermes reads yet. But a type that has declared one, by hand or by some
-  // later surface, must not lose it for having been opened in this form.
-  const profiles = (initial?.propertySchema?.profiles ?? {}) as Record<string, Record<string, unknown>>;
+  // What it is to other apps: edited below ("What this is, to other apps"),
+  // and anything declared that this form has no words for is carried whole.
+  const [profiles, setProfiles] = useState<Record<string, Record<string, unknown>>>(
+    (initial?.propertySchema?.profiles ?? {}) as Record<string, Record<string, unknown>>,
+  );
   const initialStatus = initial?.propertySchema?.fields.find(
     (f) => f.type === "status" && f.key === initial?.propertySchema?.status_field,
   );
@@ -181,6 +218,16 @@ export function TypeEditor({
     });
 
   const isText = initial?.isText ?? false;
+
+  /** The task profile the status field implies, as Hermes has always worked it out. */
+  const derivedTask = (): Record<string, unknown> => {
+    const bare = {
+      fields: fields.map((f, i) => ({ key: f.key.trim(), type: f.type, order: i, includeEmbed: f.includeEmbed })),
+      status_field: activeStatus?.key ?? null,
+      complete_values: completeValues,
+    } as unknown as PropertySchema;
+    return profilesOf(bare).find((p) => p.name === "task")?.map ?? {};
+  };
 
   const save = async () => {
     setError(null);
@@ -230,8 +277,11 @@ export function TypeEditor({
         ? Object.fromEntries(
             Object.entries(profiles).map(([name, map]) => [
               name,
+              // A declared task profile is the one Hermes works out from the
+              // status field, whole, with what was set here (its project) on
+              // top — declaring it must not cost it its title or its dates.
               name === "task" && activeStatus
-                ? { ...map, status: activeStatus.key, completeValues }
+                ? { ...derivedTask(), ...map, status: activeStatus.key, completeValues }
                 : map,
             ]),
           )
@@ -479,6 +529,8 @@ export function TypeEditor({
         </div>
       )}
 
+      <ProfilesSection fields={fields} profiles={profiles} setProfiles={setProfiles} isTask={Boolean(activeStatus)} />
+
       {error && <div className="error">{error}</div>}
       <div className="type-actions">
         <button className="ghost" onClick={onCancel}>
@@ -536,3 +588,95 @@ export function TypeEditor({
   );
 }
 
+
+/*
+ * "What this is, to other apps": a person, an event, a project — any of them,
+ * each with its slots matched to this type's fields — and, for a type with a
+ * status (a task), which reference field is its project.
+ */
+function ProfilesSection({
+  fields,
+  profiles,
+  setProfiles,
+  isTask,
+}: {
+  fields: EditField[];
+  profiles: Record<string, Record<string, unknown>>;
+  setProfiles: (next: Record<string, Record<string, unknown>>) => void;
+  isTask: boolean;
+}) {
+  const setSlot = (profile: string, slot: string, value: string) => {
+    const map = { ...(profiles[profile] ?? {}) };
+    if (value) map[slot] = slotSpec(value);
+    else delete map[slot];
+    setProfiles({ ...profiles, [profile]: map });
+  };
+  const toggle = (profile: string, on: boolean) => {
+    const next = { ...profiles };
+    if (on) {
+      // Its name, to start: the title field is the name of anything.
+      next[profile] = fields.some((f) => f.key === "title") ? { title: "title" } : {};
+    } else delete next[profile];
+    setProfiles(next);
+  };
+  const projectChoices = slotChoices(fields, "ref");
+  // A task's project: the task profile Hermes works out from the status field,
+  // declared with its project added — so it says what it is, whole.
+  const setTaskProject = (value: string) => {
+    const next = { ...profiles };
+    const task = { ...(next.task ?? {}) } as Record<string, unknown>;
+    if (value) task.project = value;
+    else delete task.project;
+    if (Object.keys(task).length) next.task = task;
+    else delete next.task;
+    setProfiles(next);
+  };
+  return (
+    <div className="field" style={{ marginTop: 18 }}>
+      <span className="field-label">What this is, to other apps</span>
+      <div className="hint" style={{ marginBottom: 6 }}>
+        So a sync, Talaris, or any app reading the interchange format knows which field is the email, the start, the project. Hermes itself needs none of it.
+      </div>
+      <div className="row" style={{ gap: 14, flexWrap: "wrap" }}>
+        {Object.entries(PROFILE_SLOTS).map(([name, def]) => (
+          <label className="row" style={{ gap: 6 }} key={name}>
+            <input type="checkbox" checked={name in profiles} onChange={(e) => toggle(name, e.target.checked)} style={{ width: "auto" }} />
+            <span>{def.label}</span>
+          </label>
+        ))}
+      </div>
+      {Object.entries(PROFILE_SLOTS).filter(([name]) => name in profiles).map(([name, def]) => (
+        <div className="fields-table" key={name} style={{ marginTop: 8 }}>
+          <div className="hint" style={{ margin: "4px 0" }}>{def.label}</div>
+          {def.slots.map(([slot, label, kind]) => {
+            const choices = slotChoices(fields, kind);
+            return (
+              <div className="field-row" key={slot}>
+                <span className="f-label" style={{ minWidth: 130 }}>{label}</span>
+                <select className="f-type" value={slotValue(profiles[name]?.[slot])} onChange={(e) => setSlot(name, slot, e.target.value)}>
+                  <option value="">{choices.length ? "— none —" : kind === "ref" ? "— no reference fields —" : "— no fitting field —"}</option>
+                  {choices.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+      {isTask && (
+        <div className="fields-table" style={{ marginTop: 8 }}>
+          <div className="field-row">
+            <span className="f-label" style={{ minWidth: 130 }}>A task's project</span>
+            <select className="f-type" value={slotValue(profiles.task?.project)} onChange={(e) => setTaskProject(e.target.value)}>
+              <option value="">{projectChoices.length ? "— none —" : "— no reference fields —"}</option>
+              {projectChoices.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

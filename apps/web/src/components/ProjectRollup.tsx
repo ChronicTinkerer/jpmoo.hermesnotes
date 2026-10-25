@@ -10,10 +10,9 @@ import { CollapseAllButton, CollapsibleCard, useCollapse } from "./CollapsibleCa
 /**
  * A project is a type that says it is one.
  *
- * `project` is not in the shared profile vocabulary, which is the point: a name
- * earns its place by being declared and used, not by being ratified first. A
- * type declaring it here loses nothing anywhere else — other tools carry an
- * unknown profile name through untouched.
+ * `project` earned its place in the shared vocabulary by being declared and
+ * used here first (pkm-interchange LIMITS, closed 2026-10-25): a type
+ * declaring it is a project to any tool that reads the format.
  *
  * The name check underneath is a guess, and the rule this codebase otherwise
  * forbids: it works for an account whose projects are called Projects and fails

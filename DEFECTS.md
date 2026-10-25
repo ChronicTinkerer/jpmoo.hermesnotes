@@ -345,3 +345,24 @@ under-claiming measures identically to not implementing, because every case
 requiring the feature is scoped away as not-applicable and silently never runs.
 Worth a rule of its own: **a feature added to the data is not added until the
 detector knows about it.**
+
+## 12. The checker's own self-test fails the attachment rules it ships
+
+**Where:** `pkm-interchange/check/src/validate.js`, run by `npm test` in
+`pkm-interchange/` (`cli.js --self`, the reference implementation against every
+fixture).
+
+**What:** five cases fail before any change, all in `fixtures/attachments.json`:
+`bytes-need-a-hash`, `a-hash-is-lowercase-hex`, `empty-bytes-are-not-a-file`,
+`a-consumer-that-knows-nothing-destroys-nothing` and
+`carrying-files-is-its-own-claim`. The fixtures and the spec's *Attachments*
+rules landed ("Files travel now", ce9633d) without the reference validator
+learning `attachment.hash-missing`, `attachment.hash-malformed`,
+`attachment.bytes-empty` or `conformance.undeclared-feature` for
+`attachment-bytes`, and its `roundtrip` answers a different shape from the one
+that case expects. Because `--self` exits non-zero, `npm test` never reaches
+the mutant suite either; it has to be run alone (`node check/src/mutants.js`).
+
+**Proof:** `cd pkm-interchange && node check/src/cli.js --self` — 5 failures,
+all `attachments/`. Found 2026-10-25 while adding the `contact`, `event` and
+`project` slots, which pass.

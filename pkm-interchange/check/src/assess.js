@@ -17,7 +17,7 @@ import { validate } from "./validate.js";
  * suite or by `--url`, and this says so rather than scoring what it cannot see.
  */
 
-const V0_PROFILES = ["task", "event", "contact", "note"];
+const V0_PROFILES = ["task", "event", "contact", "note", "project"];
 
 export function assess(envelope) {
   const e = envelope ?? {};
@@ -65,7 +65,7 @@ export function assess(envelope) {
         ? "Put something in it. An export needs at least one type and one object to be evidence of anything."
         : `Fix what the validator named: ${codes.join(", ")}. Each code is a rule in AGENTS.md.`
       : produce === 0
-        ? "Declare a profile on at least one type — `task`, `event`, `contact` or `note` — mapping your own field names onto it. That is level 1, and it is the rung that makes agents and other apps able to read your data. See \"Level 1\" in the README."
+        ? "Declare a profile on at least one type — `task`, `event`, `contact`, `note` or `project` — mapping your own field names onto it. That is level 1, and it is the rung that makes agents and other apps able to read your data. See \"Level 1\" in the README."
         : "Level 2 is round-trip: data that passes through your app comes back with the fields you never modeled still in it. A file cannot show that. Run the suite in-process, or `pkm-check --url` against your running app.";
 
   return { checks, produce, next };

@@ -279,6 +279,249 @@
         "valid": true
       },
       "why": "The companion to the case above, and the reason it is safe to run. Three things in a profile are not field keys: a list of complete values, the halves of a compound field named through `{field, part}`, and `content` — the one reserved slot outside the property bag. A profile nobody standardized is carried and not interpreted, so `habit` naming a field this type does not have is not an error either. A rule that fired on any of these would be one producers learn to ignore."
+    },
+    {
+      "id": "profile/contact-email-is-the-mapped-field",
+      "level": 1,
+      "op": "read",
+      "given": {
+        "type": {
+          "id": "t_person",
+          "name": "Person",
+          "fields": [
+            {
+              "key": "name",
+              "kind": "text"
+            },
+            {
+              "key": "addresses",
+              "kind": "text",
+              "many": true
+            },
+            {
+              "key": "works_at",
+              "kind": "reference",
+              "targetType": "t_org"
+            },
+            {
+              "key": "about",
+              "kind": "richtext"
+            }
+          ],
+          "profiles": {
+            "contact": {
+              "title": "name",
+              "email": "addresses",
+              "organization": "works_at",
+              "body": "about"
+            }
+          }
+        },
+        "object": {
+          "properties": {
+            "name": "Rosa Diaz",
+            "addresses": [
+              "rosa@nine-nine.example",
+              "rd@home.example"
+            ]
+          }
+        }
+      },
+      "args": {
+        "key": "email",
+        "profile": "contact"
+      },
+      "expect": [
+        "rosa@nine-nine.example",
+        "rd@home.example"
+      ],
+      "why": "`contact` names its slots as `task` does, so a stranger can find *the* email without being told what this producer calls it — here `addresses`, a `many` field, and both of them: a person with two addresses has two, and the first is not more theirs than the second."
+    },
+    {
+      "id": "profile/event-end-is-half-a-span",
+      "level": 1,
+      "op": "read",
+      "given": {
+        "type": {
+          "id": "t_meeting",
+          "name": "Meeting",
+          "fields": [
+            {
+              "key": "what",
+              "kind": "text"
+            },
+            {
+              "key": "when",
+              "kind": "datespan",
+              "startLabel": "From",
+              "endLabel": "Until"
+            },
+            {
+              "key": "where",
+              "kind": "text"
+            },
+            {
+              "key": "who",
+              "kind": "reference",
+              "targetType": "t_person",
+              "many": true
+            }
+          ],
+          "profiles": {
+            "event": {
+              "title": "what",
+              "start": {
+                "field": "when",
+                "part": "start"
+              },
+              "end": {
+                "field": "when",
+                "part": "end"
+              },
+              "location": "where",
+              "attendees": "who"
+            }
+          }
+        },
+        "object": {
+          "properties": {
+            "what": "Retreat",
+            "when": {
+              "start": "2026-03-12T09:00",
+              "end": "2026-03-12T16:00"
+            }
+          }
+        }
+      },
+      "args": {
+        "key": "end",
+        "profile": "event"
+      },
+      "expect": "2026-03-12T16:00",
+      "why": "An event's `start` and `end` follow the part mapping exactly as a task's `start` and `due` do. One producer's single span is the profile's two ends, and the labels on it — From, Until — are the producer's words, not a vocabulary to match."
+    },
+    {
+      "id": "profile/a-project-says-it-is-one",
+      "level": 1,
+      "op": "profilesOf",
+      "given": {
+        "type": {
+          "id": "t_initiative",
+          "name": "Initiative",
+          "fields": [
+            {
+              "key": "name",
+              "kind": "text"
+            },
+            {
+              "key": "why",
+              "kind": "richtext"
+            }
+          ],
+          "profiles": {
+            "project": {
+              "title": "name",
+              "body": "why"
+            }
+          }
+        }
+      },
+      "expect": [
+        "project"
+      ],
+      "why": "A type called Initiative is a project because it says so. Without the profile, the only way a consumer could find someone's projects was by the type's name — which works for an account whose projects are called Projects and fails for every other, and is the guess this format exists to make unnecessary."
+    },
+    {
+      "id": "profile/a-pointing-slot-must-be-a-reference",
+      "level": 1,
+      "op": "validate",
+      "given": {
+        "type": {
+          "id": "t_todo",
+          "name": "Todo",
+          "fields": [
+            {
+              "key": "title",
+              "kind": "text"
+            },
+            {
+              "key": "done",
+              "kind": "boolean"
+            },
+            {
+              "key": "project_name",
+              "kind": "text"
+            }
+          ],
+          "profiles": {
+            "task": {
+              "title": "title",
+              "project": "project_name"
+            }
+          }
+        }
+      },
+      "expect": {
+        "valid": false,
+        "errors": [
+          {
+            "code": "profile.slot-not-a-reference"
+          }
+        ]
+      },
+      "why": "`project`, `attendees` and `organizer` exist so a reader can follow them — to the project a task is part of, the people at a meeting. A text field holding a project's name looks the same and leads nowhere: two projects can share a name, one can be renamed, and the link silently becomes a word."
+    },
+    {
+      "id": "profile/attendees-are-references",
+      "level": 1,
+      "op": "validate",
+      "given": {
+        "type": {
+          "id": "t_meeting",
+          "name": "Meeting",
+          "fields": [
+            {
+              "key": "what",
+              "kind": "text"
+            },
+            {
+              "key": "when",
+              "kind": "datespan",
+              "startLabel": "From",
+              "endLabel": "Until"
+            },
+            {
+              "key": "where",
+              "kind": "text"
+            },
+            {
+              "key": "who",
+              "kind": "reference",
+              "targetType": "t_person",
+              "many": true
+            }
+          ],
+          "profiles": {
+            "event": {
+              "title": "what",
+              "start": {
+                "field": "when",
+                "part": "start"
+              },
+              "end": {
+                "field": "when",
+                "part": "end"
+              },
+              "location": "where",
+              "attendees": "who"
+            }
+          }
+        }
+      },
+      "expect": {
+        "valid": true
+      },
+      "why": "The companion to the case above: a `many` reference to people is exactly what `attendees` wants. Whether the targets are contacts is their type's to say, not this one's — a meeting can invite a room, and a reader that finds no `contact` on the target reads it as whatever it is."
     }
   ]
 }

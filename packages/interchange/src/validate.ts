@@ -16,7 +16,9 @@ export interface Invalid {
   path: string;
 }
 
-const PROFILES = ["task", "event", "contact", "note", "journal"];
+const PROFILES = ["task", "event", "contact", "note", "journal", "project"];
+/** The slots that point at other things — a task's project, a meeting's people — and so must name a reference. */
+const REFERENCE_SLOTS: Record<string, string[]> = { task: ["project"], event: ["attendees", "organizer"] };
 
 /**
  * Every attachment value in an envelope, wherever it sits.
@@ -138,6 +140,12 @@ export function validateEnvelope(envelope: unknown): { valid: boolean; errors: I
         if (typeof named !== "string" || named === "content") continue;
         if (!declared.has(named)) {
           fail("profile.field-not-declared", `types[${i}].profiles.${profile}.${key}`);
+        } else if (
+          (REFERENCE_SLOTS[profile] ?? []).includes(key) &&
+          (t.fields ?? []).find((f) => f.key === named)?.kind !== "reference"
+        ) {
+          // A name in a text field cannot be followed, and following it is what the slot is for.
+          fail("profile.slot-not-a-reference", `types[${i}].profiles.${profile}.${key}`);
         }
       }
     }

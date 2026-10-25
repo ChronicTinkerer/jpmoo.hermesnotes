@@ -73,7 +73,7 @@ So add three lines saying what those fields mean:
 
 That reads: *this is a task; its title is in `what`, and its due date is in `deadline`.*
 
-`task` is a word from a short shared list — `task`, `event`, `contact`, `note` — so an app that has never heard of you still knows what one is. Everything to the right of it is yours. Nothing was renamed, nothing moved, and `fields` is untouched. You added a translation, not a conversion.
+`task` is a word from a short shared list — `task`, `event`, `contact`, `note`, `project` — so an app that has never heard of you still knows what one is. Everything to the right of it is yours. Nothing was renamed, nothing moved, and `fields` is untouched. You added a translation, not a conversion.
 
 Now any app that knows what a `task` is can find the title and due date of yours without knowing anything else about your app. If you go further and let it write, it can hand you back "this one is shipped" from its own store of tasks.
 
@@ -396,7 +396,7 @@ Then ask where that leaves you — see [Checking yourself](#checking-yourself).
 
 ### Level 1 — the one to do even if you do nothing else
 
-Add `profiles` to any type that is one of the four things a stranger can recognize: `task`, `event`, `contact`, `note`.
+Add `profiles` to any type that is one of the things a stranger can recognize: `task`, `event`, `contact`, `note`, `project`. Each has a short list of slots — which of your fields is the email, the start, the project — in AGENTS.md, *Profiles*.
 
 ```json
 "profiles": {
@@ -512,10 +512,10 @@ my-export.json
   produce: level 0
   consume and operate are not visible in a file — see --url or the suite
 
-Next: Declare a profile on at least one type — `task`, `event`, `contact`
-or `note` — mapping your own field names onto it. That is level 1, and it
-is the rung that makes agents and other apps able to read your data. See
-"Level 1" in the README.
+Next: Declare a profile on at least one type — `task`, `event`, `contact`,
+`note` or `project` — mapping your own field names onto it. That is level 1,
+and it is the rung that makes agents and other apps able to read your data.
+See "Level 1" in the README.
 ```
 
 A rung, and one thing to do to reach the next. It scores **producing** only, because that is all a document can honestly show: a file cannot demonstrate that your app preserves what it did not understand, or that a partial write leaves the rest alone. Those are the next two sections.

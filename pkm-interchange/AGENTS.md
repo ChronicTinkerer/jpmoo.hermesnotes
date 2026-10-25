@@ -244,7 +244,44 @@ large ones — and the consumer can always tell which it got.
 
 A profile declaration maps a producer's own fields onto a vocabulary a stranger can consume. It is a *mapping*, not a claim of identity — a type named `Chore` or `Errand` or `明日の仕事` declaring the `task` profile is consumable by any task-aware tool.
 
-v0 profiles: `task`, `event`, `contact`, `note`, `journal`.
+v0 profiles: `task`, `event`, `contact`, `note`, `journal`, `project`.
+
+**Their slots.** Each slot names one of the producer's fields — a key, or
+`{ "field": …, "part": "start" | "end" }` for half of a `datespan` — and every
+slot is optional: a slot left out says the producer does not have it, never
+that the consumer should look for something like it.
+
+| profile | slots |
+|---|---|
+| `task` | `title`, `status`, `completeValues` (a list of values, not a field), `start`, `due`, `project` |
+| `event` | `title`, `start`, `end`, `location`, `attendees`, `organizer`, `body` |
+| `contact` | `title`, `email`, `phone`, `organization`, `role`, `body` |
+| `note` | `title`, `body` |
+| `journal` | `date` — see *The page for a date* |
+| `project` | `title`, `body` |
+
+`body` may name `content`, the reserved body slot, as `note`'s may. `email` and
+`phone` may name a `many` field: a person with two addresses has two, and the
+first is not more theirs than the second. `organization` names a `text` field
+or a `reference` to an organization the producer keeps as a thing of its own;
+either is right, and a consumer reads whichever it is given.
+
+**Three slots point at other things, and must name a `reference`:** `task`'s
+`project`, and `event`'s `attendees` and `organizer`. These are what make a
+library of people, meetings and work connected rather than a pile of titles —
+the people at a meeting, the project a task belongs to — and a text field
+holding a name cannot be followed. A target is read as a person when its type
+declares `contact`, and as a project when it declares `project`; a target whose
+type declares neither is read as whatever it is, generically, and not guessed
+at. → `profile.slot-not-a-reference`
+
+**A project is a thing, not a list.** `project` is for a type whose objects are
+the work itself — named, described, archived when done, pointed at by the tasks
+and notes that belong to it. A list of tasks someone keeps is a collection
+(*Collections and placement*), and a producer whose projects are only folders
+of tasks has collections, not projects. The two can coexist: a project is often
+shown as the collection of what points at it, and that collection is a view,
+the project the object.
 
 A type may declare several. A type may declare none, in which case consumers can still read its fields generically and must not guess.
 
