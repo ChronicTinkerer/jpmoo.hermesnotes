@@ -328,7 +328,7 @@ export function toInterchange(input: ExportInput): {
       } else {
         props[slot.key] = mine.map((a) => {
           const carried = a.data !== undefined && a.data.byteLength <= limit;
-          if (!carried) {
+          if (!carried && a.data !== undefined) {
             note(
               "attachment.too-large-to-carry",
               "format",
@@ -344,7 +344,9 @@ export function toInterchange(input: ExportInput): {
             // that does not can say precisely what is missing.
             ...(a.data !== undefined
               ? { sha256: createHash("sha256").update(a.data).digest("hex") }
-              : {}),
+              : a.sha256
+                ? { sha256: a.sha256 }
+                : {}),
             ...(carried ? { bytes: Buffer.from(a.data!).toString("base64") } : {}),
           };
         });
@@ -741,6 +743,14 @@ export function toInterchange(input: ExportInput): {
       "attachment.files-not-requested",
       "hermes",
       "A type declares an attachment field and this export was built without the files. The format can carry them now, so this is a caller that did not ask rather than a format that cannot say — the names do not travel either, because Hermes stores attachments against the block and nothing loaded them.",
+    );
+  } else if ((input.attachments ?? []).some((a) => a.data === undefined)) {
+    // Names and hashes, not bytes: a caller that did not ask for them. Each is a
+    // known-missing file it can fetch by its hash (*Files*), or all at once with `files=1`.
+    note(
+      "attachment.files-not-requested",
+      "hermes",
+      "Attachments travel as names and hashes in this export; their bytes were not asked for. Each one is at /interchange/files/<sha256>, or ask with files=1 to have them inline.",
     );
   }
 

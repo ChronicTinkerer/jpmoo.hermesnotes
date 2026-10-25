@@ -160,7 +160,9 @@ function runCase(adapter, c, bySuiteId) {
         );
       }
       if (c.expect.object !== undefined) {
-        checks.push(subset(c.expect.object, got.object));
+        // The body is checked exactly below, `null` and all; loosely here it would read null as a value to find.
+        const { content: _body, ...loose } = c.expect.object;
+        checks.push(subset(loose, got.object));
         // A patch that leaves a property behind is the failure this suite is
         // about, so an expected property bag is matched exactly, not loosely.
         if (c.expect.object.properties) {
@@ -175,7 +177,28 @@ function runCase(adapter, c, bySuiteId) {
         if (c.expect.object.tags) {
           checks.push(exact([...c.expect.object.tags].sort(), [...(got.object?.tags ?? [])].sort()));
         }
+        // The body, exactly — `null` meaning none at all. A subset match cannot
+        // see a body that should have gone and is still there, which is what
+        // the `unset` case is about.
+        if ("content" in c.expect.object) {
+          checks.push(exact(c.expect.object.content, got.object?.content ?? null));
+        }
       }
+      return { pass: checks.every(Boolean), got };
+    }
+    /**
+     * A file over the live binding, by its hash: `args.op` is `put` or `get`,
+     * `given.held` what the producer holds already (hash → base64, because a
+     * fixture is JSON), and `bytes` base64 for the same reason.
+     */
+    case "file": {
+      const got = adapter.file(given.held ?? {}, given.args ?? {});
+      const checks = [got.ok === c.expect.ok];
+      if (c.expect.created !== undefined) checks.push(Boolean(got.created) === c.expect.created);
+      if (c.expect.bytes !== undefined) checks.push(got.bytes === c.expect.bytes);
+      if (c.expect.reports !== undefined) checks.push(c.expect.reports.every((r) => (got.reports ?? []).includes(r)));
+      // Refused, nothing is answered as though it were the file.
+      if (c.expect.ok === false) checks.push(got.bytes === undefined);
       return { pass: checks.every(Boolean), got };
     }
     /**
@@ -385,6 +408,7 @@ const ROLES = {
   collectionPatch: ["operate"],
   collectionCreate: ["operate"],
   follow: ["operate"],
+  file: ["operate"],
 };
 
 /**

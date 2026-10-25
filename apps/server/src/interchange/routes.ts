@@ -1,6 +1,8 @@
 import { attachmentBlobs, attachments, blockTags, blockTypes, blocks, changes, memberships, series, tags } from "@hermes/db";
 import {
   CONFORMANCE,
+  bodyOf,
+  fileHashOk,
   narrow,
   patchCollectionProps,
   placeMember,
@@ -8,7 +10,7 @@ import {
   toInterchange,
 } from "@hermes/interchange";
 import { createHash } from "node:crypto";
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, notInArray, sql } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { FilterQuery } from "@hermes/shared";
@@ -246,6 +248,9 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
        * digest either way, so a consumer always knows exactly which file it is
        * or is not being handed.
        */
+      // Names and hashes always — a live client keeping attachments in step has to
+      // see them on every read — and the bytes only when asked: by `files=1` here,
+      // or one at a time at `/interchange/files/<sha256>` (*Files*).
       const files = q.files
         ? await db
             .select({
@@ -254,6 +259,7 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
               filename: attachments.filename,
               mime: attachments.mime,
               size: attachments.size,
+              sha256: attachments.sha256,
               data: attachmentBlobs.data,
             })
             .from(attachments)
@@ -265,7 +271,17 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
               ),
             )
             .where(eq(attachments.ownerId, userId))
-        : undefined;
+        : await db
+            .select({
+              id: attachments.id,
+              blockId: attachments.blockId,
+              filename: attachments.filename,
+              mime: attachments.mime,
+              size: attachments.size,
+              sha256: attachments.sha256,
+            })
+            .from(attachments)
+            .where(eq(attachments.ownerId, userId));
 
       const mem = await db
         .select({
@@ -516,8 +532,12 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
       userId: string,
       blockId: string,
       properties: Record<string, unknown> | undefined,
-    ): Promise<{ properties: Record<string, unknown> | undefined; reports: string[]; commit: () => Promise<void> }> {
-      if (!properties) return { properties, reports: [], commit: async () => {} };
+      /** The hashes this block already has a row for: named again, they are not a second row. */
+      have: Set<string> = new Set(),
+    ): Promise<{ properties: Record<string, unknown> | undefined; reports: string[]; named: Map<string, Set<string>>; commit: () => Promise<void> }> {
+      // Per property key, every file it names (held, handed over, or already on the block): what a slot should hold now.
+      const named = new Map<string, Set<string>>();
+      if (!properties) return { properties, reports: [], named, commit: async () => {} };
       const reports: string[] = [];
       const rows: {
         blockId: string;
@@ -526,8 +546,8 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
         mime: string;
         size: number;
         sha256: string;
-        /** Dropped before the metadata is written; the blob keeps them. */
-        data: Buffer;
+        /** Dropped before the metadata is written; the blob keeps them. Null: the blob is already held. */
+        data: Buffer | null;
       }[] = [];
       const out: Record<string, unknown> = {};
 
@@ -542,6 +562,32 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
           }
           const name = typeof a.filename === "string" && a.filename ? a.filename : "attachment";
           const bytes = typeof a.bytes === "string" && a.bytes.length > 0 ? a.bytes : null;
+          if (typeof a.sha256 === "string") {
+            if (!named.has(key)) named.set(key, new Set());
+            named.get(key)!.add(a.sha256);
+          }
+          if (!bytes && typeof a.sha256 === "string") {
+            // Named by its hash, the bytes handed over before at /interchange/files
+            // (*Files*): already on this block, nothing to do; held, a row; not
+            // held, a known-missing file — said, since Hermes keeps no row for a
+            // file it does not have.
+            if (have.has(a.sha256)) continue;
+            const [blob] = await db
+              .select({ size: attachmentBlobs.size })
+              .from(attachmentBlobs)
+              .where(and(eq(attachmentBlobs.ownerId, userId), eq(attachmentBlobs.sha256, a.sha256)));
+            if (!blob) {
+              reports.push("attachment.known-missing");
+              continue;
+            }
+            rows.push({
+              blockId, ownerId: userId, filename: name,
+              mime: typeof a.mediaType === "string" && a.mediaType ? a.mediaType : "application/octet-stream",
+              size: blob.size, sha256: a.sha256, data: null,
+            });
+            have.add(a.sha256);
+            continue;
+          }
           if (!bytes) {
             // Told about a file, not given it. Hermes has no row for a file it
             // does not hold, so this is a real reduction and is named as one.
@@ -560,6 +606,7 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
             reports.push("attachment.hash-mismatch");
             continue;
           }
+          if (have.has(a.sha256)) continue;
           rows.push({
             blockId,
             ownerId: userId,
@@ -569,6 +616,7 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
             sha256: a.sha256,
             data,
           });
+          have.add(a.sha256);
         }
         // A key whose only contents were files is absent rather than empty: the
         // exporter puts it back from the table, and an empty list here would be
@@ -592,15 +640,53 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
         // distinct digest: a payload carrying the same file twice — the same
         // picture on two nodes of one canvas — writes its bytes once.
         const blobs = new Map(
-          rows.map((r) => [r.sha256, { ownerId: userId, sha256: r.sha256, size: r.size, data: r.data }]),
+          rows.filter((r) => r.data).map((r) => [r.sha256, { ownerId: userId, sha256: r.sha256, size: r.size, data: r.data! }]),
         );
-        await db.insert(attachmentBlobs).values([...blobs.values()]).onConflictDoNothing();
+        if (blobs.size) await db.insert(attachmentBlobs).values([...blobs.values()]).onConflictDoNothing();
         await db.insert(attachments).values(
           rows.map(({ data: _data, ...meta }) => meta),
         );
       }
       };
-      return { properties: out, reports, commit };
+      return { properties: out, reports, named, commit };
+    }
+
+    /**
+     * Which property a block's files travel in: the first attachment field its
+     * type declares — the same answer the exporter gives (`map.ts`). Null when
+     * it declares none.
+     */
+    async function attachmentSlot(userId: string, blockId: string): Promise<string | null> {
+      const [row] = await db
+        .select({ schema: blockTypes.propertySchema })
+        .from(blocks)
+        .innerJoin(blockTypes, eq(blockTypes.id, blocks.blockTypeId))
+        .where(and(eq(blocks.id, blockId), eq(blocks.ownerId, userId)));
+      const fields = ((row?.schema ?? {}) as { fields?: { key: string; type: string }[] }).fields ?? [];
+      return fields.find((f) => f.type === "attachments")?.key ?? null;
+    }
+
+    /**
+     * Files taken out of a block's attachment field go from the block; a blob
+     * no attachment names any more is freed (*Files*: a file nothing names is
+     * the producer's to free — and only the producer's, so no client can delete
+     * one another block still holds).
+     */
+    async function releaseFiles(userId: string, blockId: string, keep: Set<string>): Promise<void> {
+      const gone = await db
+        .delete(attachments)
+        .where(and(eq(attachments.blockId, blockId), eq(attachments.ownerId, userId),
+          ...(keep.size ? [notInArray(attachments.sha256, [...keep])] : [])))
+        .returning({ sha256: attachments.sha256 });
+      const hashes = [...new Set(gone.map((g) => g.sha256))];
+      if (!hashes.length) return;
+      const still = await db
+        .select({ sha256: attachments.sha256 })
+        .from(attachments)
+        .where(and(eq(attachments.ownerId, userId), inArray(attachments.sha256, hashes)));
+      const named = new Set(still.map((x) => x.sha256));
+      const free = hashes.filter((h) => !named.has(h));
+      if (free.length) await db.delete(attachmentBlobs).where(and(eq(attachmentBlobs.ownerId, userId), inArray(attachmentBlobs.sha256, free)));
     }
 
     guarded.put("/interchange/objects/:id", async (req, reply) => {
@@ -698,8 +784,13 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
           addTags: z.array(z.string()).optional(),
           removeTags: z.array(z.string()).optional(),
           version: z.number().int(),
+          content: z.string().optional(),
         })
         .parse(req.body);
+      const userId = requireUser(req);
+      // The body (*The body*): beside `set`, and `unset: ["content"]` is it, not a property.
+      const body_ = bodyOf(body);
+      const propUnset = (body.unset ?? []).filter((k) => k !== "content");
 
       // A tag in both lists is a contradiction with no obviously right reading.
       const add = body.addTags ?? [];
@@ -708,13 +799,24 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ ok: false, reports: ["tags.added-and-removed"] });
       }
 
-      const files = await absorbFiles(requireUser(req), id, body.set);
+      // The block's files as they are, so naming one again is not a second row.
+      const slot = await attachmentSlot(userId, id);
+      const held = await db
+        .select({ sha256: attachments.sha256 })
+        .from(attachments)
+        .where(and(eq(attachments.blockId, id), eq(attachments.ownerId, userId)));
+      const files = await absorbFiles(userId, id, body.set, new Set(held.map((h) => h.sha256)));
 
       const wrote = await app.inject({
         method: "PATCH",
         url: `${mount}/blocks/${id}`,
         headers: { authorization: req.headers.authorization ?? "", "content-type": "application/json" },
-        payload: { patch: { set: files.properties, unset: body.unset }, version: body.version },
+        payload: {
+          patch: { set: files.properties, unset: propUnset },
+          version: body.version,
+          // In the same version-checked write as the properties, so a stale patch changes no words either.
+          ...(body_.body === "set" ? { content: body_.content } : body_.body === "clear" ? { content: "" } : {}),
+        },
       });
 
       if (wrote.statusCode === 409) {
@@ -726,6 +828,10 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
       }
       // The properties landed, so the files that came with them may be written.
       await files.commit();
+      // The attachment field written whole, or unset: what it no longer names goes from the block.
+      if (slot && (body.set && slot in body.set || propUnset.includes(slot))) {
+        await releaseFiles(userId, id, propUnset.includes(slot) ? new Set() : files.named.get(slot) ?? new Set());
+      }
 
       // Tags after the properties, and only once they were accepted.
       //
@@ -780,13 +886,55 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
       // A patch that could not keep every file it was handed did not do the
       // whole of what it was asked, and says so — `fidelity` follows the
       // reports rather than being asserted beside them.
+      // Words asked for and not kept — a block that is not text keeps no body — said, not answered ok.
+      const reports = [...files.reports];
+      const kept = (object as { content?: string } | undefined)?.content ?? "";
+      if (body_.body === "set" && kept !== body_.content) reports.push("content.not-kept");
       return {
         ok: true,
-        fidelity: files.reports.length ? "reduced" : "full",
-        reports: files.reports,
+        fidelity: reports.length ? "reduced" : "full",
+        reports,
         cursor: env.cursor,
         object,
       };
+    });
+
+    /*
+     * Files, by their hash (*Files*): the bytes of an attachment handed over
+     * and fetched one at a time, raw. The address is checked against the
+     * bytes; a file already held is a success that changes nothing; one not
+     * held is a 404 and said. No DELETE: a file goes when nothing names it
+     * (`releaseFiles`).
+     */
+    guarded.addContentTypeParser("*", { parseAs: "buffer", bodyLimit: 100 * 1024 * 1024 }, (_req, body, done) => done(null, body));
+    guarded.put("/interchange/files/:sha256", async (req, reply) => {
+      const userId = requireUser(req);
+      const { sha256 } = z.object({ sha256: z.string() }).parse(req.params);
+      const bytes = Buffer.isBuffer(req.body) ? (req.body as Buffer) : Buffer.alloc(0);
+      if (!fileHashOk(sha256, bytes, (b) => createHash("sha256").update(b).digest("hex"))) {
+        return reply.code(422).send({ ok: false, reports: ["file.hash-mismatch"] });
+      }
+      const made = await db
+        .insert(attachmentBlobs)
+        .values({ ownerId: userId, sha256, size: bytes.byteLength, data: bytes })
+        .onConflictDoNothing()
+        .returning({ sha256: attachmentBlobs.sha256 });
+      return reply.code(made.length ? 201 : 200).send({ ok: true, created: made.length > 0, reports: [] });
+    });
+    guarded.get("/interchange/files/:sha256", async (req, reply) => {
+      const userId = requireUser(req);
+      const { sha256 } = z.object({ sha256: z.string() }).parse(req.params);
+      const [blob] = await db
+        .select({ data: attachmentBlobs.data })
+        .from(attachmentBlobs)
+        .where(and(eq(attachmentBlobs.ownerId, userId), eq(attachmentBlobs.sha256, sha256)));
+      if (!blob) return reply.code(404).send({ ok: false, reports: ["file.not-held"] });
+      const [named] = await db
+        .select({ mime: attachments.mime })
+        .from(attachments)
+        .where(and(eq(attachments.ownerId, userId), eq(attachments.sha256, sha256)))
+        .limit(1);
+      return reply.type(named?.mime ?? "application/octet-stream").send(Buffer.from(blob.data));
     });
 
     /**

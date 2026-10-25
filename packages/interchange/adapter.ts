@@ -11,6 +11,7 @@
  * and "we built it wrong" are the same news to somebody deciding whether to
  * trust their notes to it.
  */
+import { createHash } from "node:crypto";
 import {
   applyPatch,
   foldChanges,
@@ -23,7 +24,7 @@ import {
   type Recurrence,
 } from "@hermes/shared";
 import { fromInterchange, hermesSortKey } from "./src/import.js";
-import { createCollection, memberWrite, patchCollectionProps, placeMember } from "./src/write.js";
+import { bodyOf, createCollection, fileHashOk, memberWrite, patchCollectionProps, placeMember } from "./src/write.js";
 import { toInterchange } from "./src/map.js";
 import { CONFORMANCE } from "./src/conformance.js";
 import { validateEnvelope } from "./src/validate.js";
@@ -94,14 +95,16 @@ export const hermesAdapter = {
 
   /** The same applyPatch the block route uses. */
   patch: (
-    object: { properties?: Record<string, unknown>; version?: number; tags?: string[] },
+    object: { properties?: Record<string, unknown>; version?: number; tags?: string[]; content?: string },
     p: {
       set?: Record<string, unknown>;
       unset?: string[];
       addTags?: string[];
       removeTags?: string[];
       version?: number;
+      content?: string;
     },
+    caps: { richtext?: boolean } = {},
   ) => {
     // A tag in both lists is a contradiction with no obviously right reading,
     // and picking one silently is how a board ends up tagged the opposite of
@@ -112,7 +115,16 @@ export const hermesAdapter = {
       return { ok: false, object, fidelity: "full" as const, reports: ["tags.added-and-removed"] };
     }
 
-    const out = applyPatch({ properties: object.properties ?? {}, version: object.version }, p ?? {});
+    // The body is not a property: `unset: ["content"]` is the body, so it is kept out of the bag's unset.
+    const out = applyPatch({ properties: object.properties ?? {}, version: object.version }, { ...(p ?? {}), unset: (p?.unset ?? []).filter((k) => k !== "content") });
+    // The body, by the rule the route applies (`bodyOf`); a tool that keeps no prose says so.
+    const body = bodyOf(p ?? {});
+    const reports = [...out.reports];
+    let content = object.content;
+    if (out.ok && body.body !== "keep") {
+      if (caps.richtext === false) reports.push("content.not-kept");
+      else content = body.body === "set" ? body.content : undefined;
+    }
 
     // Amended, never replaced, and kept out of `applyPatch` deliberately: that
     // function is about the property bag, and tags are a vocabulary shared
@@ -129,14 +141,30 @@ export const hermesAdapter = {
       ok: out.ok,
       ...(out.conflict ? { conflict: true } : {}),
       object: {
-        ...object,
+        ...(() => { const { content: _c, ...rest } = object; return rest; })(),
         properties: out.properties,
+        ...(content !== undefined ? { content } : {}),
         ...(tags !== undefined ? { tags } : {}),
         ...(out.ok && object.version !== undefined ? { version: object.version + 1 } : {}),
       },
-      fidelity: out.fidelity,
-      reports: out.reports,
+      fidelity: reports.length ? ("reduced" as const) : out.fidelity,
+      reports,
     };
+  },
+
+  /**
+   * A file by its hash, as `/interchange/files/:sha256` decides it — the same
+   * check (`fileHashOk`), against a held set standing in for the blob table.
+   */
+  file: (held: Record<string, string>, args: { op?: string; sha256?: string; bytes?: string }) => {
+    const sha = args.sha256 ?? "";
+    if (args.op === "put") {
+      const bytes = Buffer.from(args.bytes ?? "", "base64");
+      if (!fileHashOk(sha, bytes, (b) => createHash("sha256").update(b).digest("hex"))) return { ok: false, reports: ["file.hash-mismatch"] };
+      return { ok: true, created: !(sha in held), reports: [] };
+    }
+    if (args.op === "get") return sha in held ? { ok: true, bytes: held[sha], reports: [] } : { ok: false, reports: ["file.not-held"] };
+    return { ok: false, reports: ["file.op"] };
   },
 
   /**

@@ -49,7 +49,7 @@ export const CONFORMANCE = {
    */
   features: [
     "series", "placement", "derivations", "relations",
-    "attachments", "attachment-bytes",
+    "attachments", "attachment-bytes", "attachment-files",
     "addresses", "ordering",
   ],
   /**

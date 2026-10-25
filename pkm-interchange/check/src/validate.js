@@ -24,7 +24,18 @@ const FEATURES = {
     (e.objects ?? []).some((o) =>
       Object.values(o.properties ?? {}).some((v) => v && typeof v === "object" && v.kind === "attachment"),
     ) || (e.types ?? []).some((t) => (t.fields ?? []).some((f) => f.kind === "attachment")),
+  // The files themselves, not only their names: its own claim (Attachments, "Two features, not one").
+  "attachment-bytes": (e) => (e.objects ?? []).some((o) => attachmentValues(o).some((a) => typeof a.bytes === "string" && a.bytes !== "")),
 };
+
+/** Every attachment value an object holds, one by one — a `many` field's included. */
+function attachmentValues(o) {
+  const out = [];
+  for (const v of Object.values(o.properties ?? {})) {
+    for (const x of Array.isArray(v) ? v : [v]) if (x && typeof x === "object" && x.kind === "attachment") out.push(x);
+  }
+  return out;
+}
 
 export function validate(envelope) {
   const errors = [];
@@ -49,6 +60,16 @@ export function validate(envelope) {
         }
         at = parents.get(at);
       }
+    }
+  }
+
+  // Attachments (L1): bytes are trusted only with a hash; a hash is 64 lowercase hex; empty bytes are not a file.
+  for (const o of envelope.objects ?? []) {
+    for (const a of attachmentValues(o)) {
+      const at = `objects[${o.id}]`;
+      if (a.bytes !== undefined && a.sha256 === undefined) fail("attachment.hash-missing", at);
+      if (a.sha256 !== undefined && !/^[0-9a-f]{64}$/.test(String(a.sha256))) fail("attachment.hash-malformed", at);
+      if (a.bytes === "") fail("attachment.bytes-empty", at);
     }
   }
 

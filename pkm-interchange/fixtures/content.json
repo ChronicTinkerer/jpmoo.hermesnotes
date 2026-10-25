@@ -1,0 +1,193 @@
+{
+  "suite": "content",
+  "about": "Writing the body: `content`, the reserved slot a profile may map `note.body` onto. Beside `set`, never inside it; replaced whole; removed by `unset`; untouched when not named; refused with the rest of a stale patch.",
+  "cases": [
+    {
+      "id": "content/a-patch-replaces-the-body",
+      "level": 4,
+      "op": "patch",
+      "given": {
+        "object": {
+          "id": "o_1",
+          "type": "t_note",
+          "properties": {
+            "title": "Plan",
+            "owner": "o_9"
+          },
+          "content": "The old words."
+        },
+        "patch": {
+          "content": "The new words."
+        }
+      },
+      "expect": {
+        "ok": true,
+        "object": {
+          "content": "The new words.",
+          "properties": {
+            "title": "Plan",
+            "owner": "o_9"
+          }
+        }
+      },
+      "why": "The whole entry. A note whose words sit in the body slot could be made with them and never changed: a sync copied it once and let the two copies drift apart without a word."
+    },
+    {
+      "id": "content/a-patch-not-naming-it-leaves-it",
+      "level": 4,
+      "op": "patch",
+      "given": {
+        "object": {
+          "id": "o_1",
+          "type": "t_note",
+          "properties": {
+            "title": "Plan",
+            "owner": "o_9"
+          },
+          "content": "The old words."
+        },
+        "patch": {
+          "set": {
+            "title": "Plan, revised"
+          }
+        }
+      },
+      "expect": {
+        "ok": true,
+        "object": {
+          "content": "The old words.",
+          "properties": {
+            "title": "Plan, revised",
+            "owner": "o_9"
+          }
+        }
+      },
+      "why": "Absent means untouched, for the body as for every property. A title changed by a client that never read the body must not empty it."
+    },
+    {
+      "id": "content/unset-removes-it",
+      "level": 4,
+      "op": "patch",
+      "given": {
+        "object": {
+          "id": "o_1",
+          "type": "t_note",
+          "properties": {
+            "title": "Plan",
+            "owner": "o_9"
+          },
+          "content": "The old words."
+        },
+        "patch": {
+          "unset": [
+            "content"
+          ]
+        }
+      },
+      "expect": {
+        "ok": true,
+        "object": {
+          "content": null,
+          "properties": {
+            "title": "Plan",
+            "owner": "o_9"
+          }
+        }
+      },
+      "why": "Removal is `unset`, as everywhere: not an empty string, which is words of length zero, and not null, which collides with every model where null means something."
+    },
+    {
+      "id": "content/a-property-called-content-is-a-property",
+      "level": 4,
+      "op": "patch",
+      "given": {
+        "object": {
+          "id": "o_1",
+          "type": "t_note",
+          "properties": {
+            "title": "Plan",
+            "owner": "o_9"
+          },
+          "content": "The old words."
+        },
+        "patch": {
+          "set": {
+            "content": "a field of that name"
+          }
+        }
+      },
+      "expect": {
+        "ok": true,
+        "object": {
+          "content": "The old words.",
+          "properties": {
+            "title": "Plan",
+            "owner": "o_9",
+            "content": "a field of that name"
+          }
+        }
+      },
+      "why": "Why the body is beside `set` and not in it. A type may declare a field called `content`; reached through `set`, it is that field, and the body is not touched."
+    },
+    {
+      "id": "content/a-stale-patch-changes-no-words",
+      "level": 4,
+      "op": "patch",
+      "given": {
+        "object": {
+          "id": "o_1",
+          "type": "t_note",
+          "properties": {
+            "title": "Plan",
+            "owner": "o_9"
+          },
+          "content": "The old words.",
+          "version": 4
+        },
+        "patch": {
+          "content": "Someone else's words.",
+          "version": 3
+        }
+      },
+      "expect": {
+        "ok": false,
+        "conflict": true,
+        "object": {
+          "content": "The old words."
+        }
+      },
+      "why": "A stale patch is refused whole. Merging its body in would be one writer's words silently replacing another's, with the first told it landed."
+    },
+    {
+      "id": "content/a-producer-without-bodies-says-so",
+      "level": 4,
+      "op": "patch",
+      "simulated": true,
+      "given": {
+        "object": {
+          "id": "o_1",
+          "type": "t_note",
+          "properties": {
+            "title": "Plan",
+            "owner": "o_9"
+          },
+          "content": "The old words."
+        },
+        "patch": {
+          "content": "The new words."
+        }
+      },
+      "with": {
+        "richtext": false
+      },
+      "expect": {
+        "ok": true,
+        "fidelity": "reduced",
+        "reports": [
+          "content.not-kept"
+        ]
+      },
+      "why": "Words dropped with an `ok` are words lost without anybody being told. A producer that keeps no body says so, and the client can act on it."
+    }
+  ]
+}

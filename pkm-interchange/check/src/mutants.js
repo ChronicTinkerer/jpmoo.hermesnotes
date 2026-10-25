@@ -18,6 +18,61 @@ const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "fixt
 
 const MUTANTS = [
   {
+    // The gap the body rule closed: a patch is properties and nothing else, so
+    // a note's words are written once at create and never again.
+    name: "a patch ignores the body",
+    caught: "content/a-patch-replaces-the-body",
+    patch: (a) => ({ ...a, patch: (object, p, caps) => { const { content: _c, ...rest } = p ?? {}; return a.patch(object, rest, caps); } }),
+  },
+  {
+    // `unset` read only as properties: the body asked to go stays.
+    name: "unset leaves the body where it is",
+    caught: "content/unset-removes-it",
+    patch: (a) => ({ ...a, patch: (object, p, caps) => { const out = a.patch(object, p, caps); if (out.ok && object.content !== undefined && out.object.content === undefined) out.object.content = object.content; return out; } }),
+  },
+  {
+    // The body reached through `set`: a field that shares the name overwrites the words.
+    name: "set.content is taken for the body",
+    caught: "content/a-property-called-content-is-a-property",
+    patch: (a) => ({ ...a, patch: (object, p, caps) => a.patch(object, p?.set && "content" in p.set ? { ...p, content: p.set.content } : p, caps) }),
+  },
+  {
+    // Words merged in before the version is looked at: a stale writer's body lands.
+    name: "a stale patch still writes its body",
+    caught: "content/a-stale-patch-changes-no-words",
+    patch: (a) => ({ ...a, patch: (object, p, caps) => { const out = a.patch(object, p, caps); if (out.conflict && "content" in (p ?? {})) out.object = { ...out.object, content: p.content }; return out; } }),
+  },
+  {
+    // Dropped words answered with a plain ok.
+    name: "a producer without bodies drops the words in silence",
+    caught: "content/a-producer-without-bodies-says-so",
+    patch: (a) => ({ ...a, patch: (object, p, caps) => { const out = a.patch(object, p, caps); return { ...out, fidelity: "full", reports: out.reports.filter((r) => r !== "content.not-kept") }; } }),
+  },
+  {
+    // The hash taken on trust: a file stored under a name that is not its own.
+    name: "a file put is not checked against its hash",
+    caught: "files/bytes-that-are-not-their-hash-are-refused",
+    patch: (a) => ({ ...a, file: (held, args) => (args.op === "put" ? { ok: true, created: !(args.sha256 in held), reports: [] } : a.file(held, args)) }),
+  },
+  {
+    // An upload repeated after a lost answer refused, so every reconnect fails.
+    name: "putting a file already held is an error",
+    caught: "files/a-repeat-put-is-not-an-error",
+    patch: (a) => ({ ...a, file: (held, args) => (args.op === "put" && args.sha256 in held ? { ok: false, reports: ["file.exists"] } : a.file(held, args)) }),
+  },
+  {
+    // A known-missing file answered as an empty one.
+    name: "a file not held is answered with empty bytes",
+    caught: "files/a-file-not-held-is-said",
+    patch: (a) => ({ ...a, file: (held, args) => (args.op === "get" && !(args.sha256 in held) ? { ok: true, bytes: "", reports: [] } : a.file(held, args)) }),
+  },
+  {
+    // The attachment rules forgotten by the checker's own validator — as they were, until today.
+    name: "bytes without a hash validate",
+    caught: "attachments/bytes-need-a-hash",
+    patch: (a) => ({ ...a, validate: (env) => { const v = a.validate(env); const errors = v.errors.filter((e) => e.code !== "attachment.hash-missing"); return { valid: errors.length === 0, errors }; } }),
+  },
+  {
     // A collection answered on its own, as a list of ids. Current, and useless
     // to the one consumer that had to ask — the one that cannot run the query.
     name: "answers a collection read with ids it does not carry the objects for",

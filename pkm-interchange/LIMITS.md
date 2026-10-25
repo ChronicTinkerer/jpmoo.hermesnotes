@@ -59,6 +59,55 @@ was not closed with the rest — and each says so at its own end rather than
 here. No count: the one that used to be in this spot drifted from three to ten
 without anybody noticing, which is what a number in prose does.
 
+### A body could be created and never changed — closed
+
+**Found by building, 2026-10-25:** the Hermes sync plugin in Talaris, adding
+notes. Hermes keeps a note's words where the format reserves room for them —
+its Text type maps `note.body` onto `content` — and a `PATCH` was `set`/`unset`
+over properties and nothing else. So a note could be made with its words
+through `PUT` and its words could never change: a sync would copy each note
+once and let the two copies drift apart, saying nothing. The read half had the
+body all along; the write half had no way to reach it.
+
+**Now:** `content` on the patch, beside `set` — not inside it, because a type
+may declare a field called `content` and that is a property like any other. It
+replaces the body whole; `unset: ["content"]` removes it; a patch that does not
+name it leaves it alone; a stale `version` refuses it with everything else. A
+producer that keeps no body says `content.not-kept` rather than answering `ok`
+for words it dropped.
+
+**Not a Hermes-shaped answer.** Talaris keeps a note's words in a file, Obsidian
+in a file, Logseq in blocks, Hermes in a block's content: the body slot exists
+because so many tools keep the body apart from the fields, and a format that
+let a client read it and not write it would have been a read-only format for
+the one thing most of these tools are for.
+
+→ `fixtures/content.json`
+
+### An attachment could be carried and not handed over — closed
+
+**Found by building, 2026-10-25,** by the same sync, and already named as the
+remainder of *An attachment could be named and not carried*: a live client had
+no way to give a producer a file, or take one, except inside a whole export as
+base64. A sync keeping a task's attachments in step needs both, one file at a
+time, and needs a removal on one side to be a removal on the other.
+
+**Now:** *Files*, under *The live binding*. `PUT`, `GET` and `HEAD` at
+`/interchange/files/<sha256>`, raw bytes, the hash as the address and checked
+(`file.hash-mismatch`), a repeat put a success, an unknown file `file.not-held`
+rather than an empty body. Attaching and removing are patches of the attachment
+field, so they ride everything a patch already has — versions, answers, the
+feed. A hash the producer does not hold is a known-missing file, said.
+
+**Deliberately no `DELETE`.** A client that could delete a file by its hash
+could delete one another object still holds. Removing an attachment is taking
+it out of the field; a file nothing names any more is the producer's to free.
+
+**Additive:** declared as `attachment-files`; a consumer that never heard of it
+reads hashes, as it already did.
+
+→ `fixtures/files.json`
+
 ### `contact` and `event` named a profile and almost no slots — closed, and `project` with them
 
 **Was:** `task` said what its slots were; `contact` and `event` were names on
@@ -153,7 +202,8 @@ larger again, a single JSON document cannot be streamed or chunked, and a
 library that is mostly large files still travels as names. The escape is
 per-attachment — inline the small ones, hash the large ones — so the case is
 made *legible* rather than solved, and a consumer can always tell which it got.
-A binding that offers bytes a second way is the next design, not this one.
+A binding that offers bytes a second way was the next design, and is now
+closed above: *An attachment could be carried and not handed over*.
 
 → `fixtures/attachments.json`
 

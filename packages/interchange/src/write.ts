@@ -250,3 +250,25 @@ export function createCollection(
     reports: [],
   };
 }
+
+/**
+ * The body a patch asks for (*Partial writes*, "The body"): `content` beside
+ * `set`, replaced whole; `unset: ["content"]` removes it; neither, untouched.
+ * `"keep"` is the third answer, and the common one. A field that happens to be
+ * called `content` is a property, reached through `set` — this never looks
+ * there.
+ */
+export function bodyOf(p: { content?: unknown; unset?: string[] }): { body: "keep" } | { body: "set"; content: string } | { body: "clear" } {
+  if ((p.unset ?? []).includes("content")) return { body: "clear" };
+  if (typeof p.content === "string") return { body: "set", content: p.content };
+  return { body: "keep" };
+}
+
+/**
+ * A file handed over by its hash (*Files*): the address must be the bytes'
+ * own hash, or it is refused — stored under the wrong name, a file lies to
+ * every later reader about what it is.
+ */
+export function fileHashOk(sha256: string, bytes: Uint8Array, hash: (b: Uint8Array) => string): boolean {
+  return /^[0-9a-f]{64}$/.test(sha256) && hash(bytes) === sha256;
+}

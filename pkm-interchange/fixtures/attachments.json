@@ -172,6 +172,7 @@
     },
     {
       "id": "attachments/a-consumer-that-knows-nothing-destroys-nothing",
+      "of": "object",
       "level": 1,
       "op": "roundtrip",
       "simulated": true,

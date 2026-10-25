@@ -50,10 +50,10 @@ runner can act on it.
 
 ## Operations
 
-An implementation is testable when it can answer these sixteen. They are the whole
+An implementation is testable when it can answer these. They are the whole
 adapter surface; a producer that only writes files implements the first two and
-declares the rest unsupported, and the last five are only asked of something with
-a live binding.
+declares the rest unsupported, and the writes from `create` down are only asked
+of something with a live binding.
 
 | op | given | answers |
 |---|---|---|
@@ -74,6 +74,16 @@ a live binding.
 | `collectionPatch` | `collection`, `patch` | `{ ok, conflict?, collection, fidelity, reports }` |
 | `collectionCreate` | `collection`, `existing?`, `args.at?` | `{ ok, created, collection, fidelity, reports }` |
 | `follow` | `feed` | `{ alive, gone }` — what a follower concludes |
+| `file` | `held`, `args.op`, `args.sha256`, `args.bytes?` | `{ ok, created?, bytes?, reports }` |
+
+`file` is a file over the live binding by its hash: `args.op` is `"put"` or
+`"get"`, `held` what the producer holds already (hash → base64, because a
+fixture is JSON — on the wire the bytes are raw). A refused `file` answers no
+`bytes` at all.
+
+`patch` may carry `content`, the body; a case that names `expect.object.content`
+is matched on it **exactly**, `null` meaning no body — a body that should have
+gone and is still there is invisible to a subset.
 
 `fidelity` is `"full"` or `"reduced"`. `reports` name what was lost; a `reduced`
 with an empty `reports` is a failed case, because an unexplained warning trains
@@ -159,7 +169,8 @@ without matching an error message. A write reports the same way, in `reports`
 rather than `errors` — the vocabularies overlap where the rule is the same one
 (`placement.coordinates-not-semantic` is enforced on a document and on a write),
 and the write-only names are `placement.region-not-declared`,
-`collection.unprefixed-write` and `tags.added-and-removed`.
+`collection.unprefixed-write`, `tags.added-and-removed`, `content.not-kept`,
+`file.hash-mismatch` and `file.not-held`.
 
 | code | rule |
 |---|---|
@@ -184,3 +195,6 @@ and the write-only names are `placement.region-not-declared`,
 | `conformance.missing-roles` | a level claimed without saying for which role |
 | `conformance.binding-required` | `operate` claimed with no live binding |
 | `conformance.undeclared-feature` | the data uses a feature the manifest omits |
+| `attachment.hash-missing` | an attachment carrying `bytes` and no `sha256` |
+| `attachment.hash-malformed` | a `sha256` that is not 64 lowercase hex |
+| `attachment.bytes-empty` | `"bytes": ""` — omit rather than send empty |

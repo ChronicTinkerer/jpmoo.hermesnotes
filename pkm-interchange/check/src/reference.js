@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { META_KEYS, isComplete, profilesOf, read } from "./profiles.js";
 import { nextOccurrence } from "./recurrence.js";
 import { validate } from "./validate.js";
@@ -204,6 +205,16 @@ export function patch(object, p = {}, capabilities = {}) {
   const next = structuredClone(object);
   next.properties = { ...(next.properties ?? {}) };
 
+  // The body: beside `set`, never in it — a field called `content` is a
+  // property — replaced whole when named, removed by `unset`, else untouched.
+  // A tool that keeps no prose says so rather than dropping the words.
+  const unsetBody = (p.unset ?? []).includes("content");
+  if ("content" in p || unsetBody) {
+    if (capabilities.richtext === false) say("content.not-kept");
+    else if (unsetBody) delete next.content;
+    else next.content = p.content;
+  }
+
   // Named, never replaced. A whole-list write would delete every tag this
   // caller had not heard of, which is the round-trip rule broken on the field
   // most likely to be shared between tools.
@@ -221,7 +232,7 @@ export function patch(object, p = {}, capabilities = {}) {
     }
     next.properties[k] = v;
   }
-  for (const k of p.unset ?? []) delete next.properties[k];
+  for (const k of p.unset ?? []) if (k !== "content") delete next.properties[k];
   if (object.version !== undefined) next.version = object.version + 1;
 
   return { ok: true, object: next, fidelity: reports.length ? "reduced" : "full", reports };
@@ -672,6 +683,23 @@ export function journalFor(types = [], objects = [], date) {
   return hits.length ? hits[0].id : null;
 }
 
+/**
+ * A file by its hash: put (bytes, base64 here because a fixture is JSON) or
+ * get. The address is checked against the bytes; a repeat put changes
+ * nothing; a file not held is said, never answered as empty.
+ */
+export function file(held, args = {}) {
+  if (args.op === "put") {
+    const got = createHash("sha256").update(Buffer.from(args.bytes ?? "", "base64")).digest("hex");
+    if (got !== args.sha256) return { ok: false, reports: ["file.hash-mismatch"] };
+    return { ok: true, created: !(args.sha256 in held), reports: [] };
+  }
+  if (args.op === "get") {
+    return args.sha256 in held ? { ok: true, bytes: held[args.sha256], reports: [] } : { ok: false, reports: ["file.not-held"] };
+  }
+  return { ok: false, reports: ["file.op"] };
+}
+
 export const adapter = {
   // It exists to stand in for other tools, so it can be asked to lack anything.
   simulates: ["*"],
@@ -679,7 +707,7 @@ export const adapter = {
   // implementation declares what it actually does and is measured on that.
   conformance: {
     profiles: ["task", "event", "contact", "note", "journal", "project"],
-    features: ["series", "placement", "derivations", "relations", "attachments", "addresses", "ordering", "hierarchy"],
+    features: ["series", "placement", "derivations", "relations", "attachments", "addresses", "ordering", "hierarchy", "attachment-files"],
   },
   validate,
   profilesOf,
@@ -698,4 +726,5 @@ export const adapter = {
   patchCollection,
   createCollection,
   follow,
+  file,
 };

@@ -1,0 +1,107 @@
+{
+  "suite": "files",
+  "about": "A file over the live binding, by its hash and as raw bytes: PUT, GET and HEAD at /interchange/files/<sha256>. Bytes appear here as base64 only because a fixture is JSON; on the wire they are the file.",
+  "requires": {
+    "features": [
+      "attachment-files"
+    ]
+  },
+  "cases": [
+    {
+      "id": "files/a-put-is-held-under-its-hash",
+      "level": 4,
+      "op": "file",
+      "given": {
+        "held": {},
+        "args": {
+          "op": "put",
+          "sha256": "b33f4304b9a6bd81704e55c473a4133a4922f034c1c489cb05428cc1140b042c",
+          "bytes": "aGVsbG8sIGZpbGUK"
+        }
+      },
+      "expect": {
+        "ok": true,
+        "created": true
+      },
+      "why": "The address is the hash, so the file is found again by what it is, wherever it was attached."
+    },
+    {
+      "id": "files/a-repeat-put-is-not-an-error",
+      "level": 4,
+      "op": "file",
+      "given": {
+        "held": {
+          "b33f4304b9a6bd81704e55c473a4133a4922f034c1c489cb05428cc1140b042c": "aGVsbG8sIGZpbGUK"
+        },
+        "args": {
+          "op": "put",
+          "sha256": "b33f4304b9a6bd81704e55c473a4133a4922f034c1c489cb05428cc1140b042c",
+          "bytes": "aGVsbG8sIGZpbGUK"
+        }
+      },
+      "expect": {
+        "ok": true,
+        "created": false
+      },
+      "why": "A queue that lost the answer to an upload sends it again. Refusing the repeat turns every reconnect into failures for work that already succeeded."
+    },
+    {
+      "id": "files/bytes-that-are-not-their-hash-are-refused",
+      "level": 4,
+      "op": "file",
+      "given": {
+        "held": {},
+        "args": {
+          "op": "put",
+          "sha256": "f41f3fa625ff120ddca7ef456bf66371ecea23c129f4e4c32367101edb516cf8",
+          "bytes": "aGVsbG8sIGZpbGUK"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reports": [
+          "file.hash-mismatch"
+        ]
+      },
+      "why": "Stored under the wrong name, a file lies to every later reader about what it is. A hash nobody checks is a comment."
+    },
+    {
+      "id": "files/a-get-answers-the-bytes",
+      "level": 4,
+      "op": "file",
+      "given": {
+        "held": {
+          "b33f4304b9a6bd81704e55c473a4133a4922f034c1c489cb05428cc1140b042c": "aGVsbG8sIGZpbGUK"
+        },
+        "args": {
+          "op": "get",
+          "sha256": "b33f4304b9a6bd81704e55c473a4133a4922f034c1c489cb05428cc1140b042c"
+        }
+      },
+      "expect": {
+        "ok": true,
+        "bytes": "aGVsbG8sIGZpbGUK"
+      },
+      "why": "The other half of attaching: a client that reads a hash fetches the file it names."
+    },
+    {
+      "id": "files/a-file-not-held-is-said",
+      "level": 4,
+      "op": "file",
+      "given": {
+        "held": {},
+        "args": {
+          "op": "get",
+          "sha256": "b33f4304b9a6bd81704e55c473a4133a4922f034c1c489cb05428cc1140b042c"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reports": [
+          "file.not-held"
+        ]
+      },
+      "why": "Never an empty answer: to anybody reading quickly that is a file of length zero, and a known-missing file mistaken for an empty one is a loss nobody is told about."
+    }
+  ]
+}

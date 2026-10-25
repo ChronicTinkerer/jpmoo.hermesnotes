@@ -236,7 +236,9 @@ claim about a value; what a consumer does with the bytes is its own business.
 And it does not solve size: base64 is a third larger again, a single JSON
 document cannot be streamed, and a library that is mostly large files still
 travels as names. The escape is per-attachment — inline the small ones, hash the
-large ones — and the consumer can always tell which it got.
+large ones — and the consumer can always tell which it got. Over the live
+binding there is a second way, by hash and as raw bytes: *Files*, under *The
+live binding*, declared as `attachment-files`.
 
 → `fixtures/attachments.json`
 
@@ -939,7 +941,7 @@ So the two writes divide cleanly, and neither can do the other's damage:
 | | |
 |---|---|
 | `PUT .../objects/<id>` | make this exist. Never edits. Safe to repeat. |
-| `PATCH .../objects/<id>` | change what exists. Never creates. `set`/`unset` only. |
+| `PATCH .../objects/<id>` | change what exists. Never creates. `set`/`unset`, tags, and the body (`content`). |
 
 The body is an object as the format describes one — `type`, `properties`,
 `content`, `tags`. It MAY carry `id`; if it does, it MUST match the id in the
@@ -999,9 +1001,75 @@ reading that is obviously right, and picking one silently is how a board ends up
 tagged the opposite of what somebody asked for. Same argument as two ids on a
 create.
 
+#### The body
+
+```json
+{ "content": "The whole of the new body.", "version": 7 }
+{ "unset": ["content"], "version": 7 }
+```
+
+`content`, the reserved body slot, is written beside `set` rather than inside
+it, because it is not a property: a type may declare a field called `content`
+and that field is reached through `set` like any other. **The body is one
+value**, so a patch that names it replaces it whole — edits inside a body are
+an editor's business, not a wire format's — and `unset: ["content"]` removes
+it, by the same rule as every other removal. **A patch that does not name it
+leaves it as it is.**
+
+In `unset`, `content` is always the body — the format's own name for it, as it
+is in a profile — so a field that happens to share the name is set through
+`set` and cannot be removed by `unset`. Name fields something else; a type that
+calls a field `content` has already made its profiles ambiguous.
+
+This is what makes a note writable at all. A profile may map `note.body` onto
+`content`, and the writing half of the binding could not reach it: a body could
+be created and never changed, which is a sync that copies a note once and then
+lets the two copies drift apart without a word. → `fixtures/content.json`
+
+A producer that keeps no body MUST say so — `content.not-kept`, reduced — rather
+than answer `ok` for words it dropped.
+
 If you version objects, a patch may carry `version`, and a stale one **MUST** be
 refused rather than merged. Merging looks helpful and is how one client's edit
-silently reverts another's, with the writer told it landed.
+silently reverts another's, with the writer told it landed. That includes the
+body: a stale patch changes nothing, its words included.
+
+### Files
+
+```
+PUT  <base>/interchange/files/<sha256>      the file's bytes, as they are
+GET  <base>/interchange/files/<sha256>      the bytes, or 404
+HEAD <base>/interchange/files/<sha256>      whether it is held
+```
+
+The second way an attachment's bytes travel, and the one a live client uses:
+**by its hash, as raw bytes, one file per request.** An attachment value says
+which file (`sha256`); this is where the file is. Nothing is base64'd and
+nothing rides inside an envelope, so a large file is a large request rather
+than a library that cannot be sent — the remainder *Attachments* left open, for
+a binding that can afford a second request.
+
+**The address is the hash.** A `PUT` whose bytes do not hash to the address
+MUST be refused — `file.hash-mismatch` — because a file stored under the wrong
+name is a file every later reader is lied to about. A `PUT` of a file already
+held changes nothing and succeeds, for the reason a repeated create does: a
+queue cannot know which of its uploads landed. A `GET` of a file not held is a
+`404` and `file.not-held` — never an empty body, which is a file of length zero
+to anybody reading quickly.
+
+**Attaching is a patch.** A client puts the file, then sets the attachment
+field to a value naming it — `filename`, `mediaType`, `sha256`, no `bytes`. A
+producer handed a hash it does not hold accepts the value as a *known-missing*
+file and says so (`attachment.known-missing`, reduced), exactly as an import
+would: it is not the producer's to drop.
+
+**Removing is a patch too, and there is no `DELETE`.** A client takes the value
+out of the field; what becomes of the file is the producer's to decide. One no
+longer named by anything MAY be removed — that is the producer keeping its own
+house — but a client that could delete a file by hash could delete one another
+object still holds, and the format will not hand anybody that.
+
+A producer that offers this declares `attachment-files`. → `fixtures/files.json`
 
 ### A follower that also writes
 

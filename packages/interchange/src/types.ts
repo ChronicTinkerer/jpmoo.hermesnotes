@@ -73,6 +73,8 @@ export interface HermesAttachment {
   size: number;
   /** Raw bytes. Left out when the exporter chose not to carry this one. */
   data?: Uint8Array;
+  /** Which file, as the table keeps it: so the hash travels even when the bytes do not. */
+  sha256?: string;
 }
 
 /** A recurrence rule, once, as the series table holds it. */
