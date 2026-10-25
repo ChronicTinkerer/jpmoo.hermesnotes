@@ -535,7 +535,10 @@ export async function blockRoutes(app: FastifyInstance): Promise<void> {
     if (!type.isText && schema?.status_field && schema.default_value != null) {
       defaults[schema.status_field] = schema.default_value;
     }
-    const properties = type.isText ? {} : { ...defaults, ...(body.properties ?? {}) };
+    // Text blocks carry fields too (their body is `content`, the rest live in
+    // properties — as PATCH already allows), so a create keeps what it is given:
+    // dropping them lost a note's title whenever one was made with one.
+    const properties = { ...defaults, ...(body.properties ?? {}) };
     // A field that names a template starts from it, unless the caller has
     // already said what goes there.
     for (const f of schema?.fields ?? []) {

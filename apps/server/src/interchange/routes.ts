@@ -697,6 +697,8 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
           type: z.string().uuid().optional(),
           properties: z.record(z.unknown()).optional(),
           content: z.string().optional(),
+          // Part of an object as the format describes one, so part of what a create carries.
+          tags: z.array(z.string()).optional(),
         })
         .parse(req.body ?? {});
 
@@ -756,6 +758,17 @@ export async function interchangeRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(made.statusCode).send({ ok: false, reports: ["write.refused"] });
       }
       await files.commit();
+      // Its tags, through Hermes' own route: a create that dropped them made a
+      // note the sync that tagged it could no longer find.
+      if (body.tags?.length) {
+        const tagged = await app.inject({
+          method: "PUT",
+          url: `${mount}/blocks/${id}/tags`,
+          headers: { authorization: req.headers.authorization ?? "", "content-type": "application/json" },
+          payload: { tags: [...new Set(body.tags)] },
+        });
+        if (tagged.statusCode >= 400) reports.push("tags.refused");
+      }
 
       // Read back the way a reader would, so the object in this answer is the
       // object the next `?since=` will carry.
