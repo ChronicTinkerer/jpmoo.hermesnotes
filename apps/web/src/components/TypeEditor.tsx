@@ -529,7 +529,7 @@ export function TypeEditor({
         </div>
       )}
 
-      <ProfilesSection fields={fields} profiles={profiles} setProfiles={setProfiles} isTask={Boolean(activeStatus)} />
+      <ProfilesSection fields={fields} profiles={profiles} setProfiles={setProfiles} isTask={Boolean(activeStatus)} derivedTask={derivedTask} statusName={activeStatus ? activeStatus.label.trim() || activeStatus.key : ""} />
 
       {error && <div className="error">{error}</div>}
       <div className="type-actions">
@@ -590,20 +590,31 @@ export function TypeEditor({
 
 
 /*
- * "What this is, to other apps": a person, an event, a project — any of them,
- * each with its slots matched to this type's fields — and, for a type with a
- * status (a task), which reference field is its project.
+ * "What this is, to other apps": a task, a person, an event, a project — any
+ * of them, each with its slots matched to this type's fields.
+ *
+ * A task is not ticked here: a type *is* one when it has a status field whose
+ * completion is set (below, Status options) — what Hermes has always gone by.
+ * It is shown all the same, ticked or not, with the slots it fills, so the
+ * section never reads as though tasks were the one thing that cannot be said;
+ * its start, due date and project can be matched to other fields here.
  */
+const TASK_SLOTS: [string, string, SlotKind][] = [["title", "Name", "words"], ["start", "Available", "when"], ["due", "Due", "when"], ["project", "Project", "ref"]];
+
 function ProfilesSection({
   fields,
   profiles,
   setProfiles,
   isTask,
+  derivedTask,
+  statusName,
 }: {
   fields: EditField[];
   profiles: Record<string, Record<string, unknown>>;
   setProfiles: (next: Record<string, Record<string, unknown>>) => void;
   isTask: boolean;
+  derivedTask: () => Record<string, unknown>;
+  statusName: string;
 }) {
   const setSlot = (profile: string, slot: string, value: string) => {
     const map = { ...(profiles[profile] ?? {}) };
@@ -619,14 +630,18 @@ function ProfilesSection({
     } else delete next[profile];
     setProfiles(next);
   };
-  const projectChoices = slotChoices(fields, "ref");
-  // A task's project: the task profile Hermes works out from the status field,
-  // declared with its project added — so it says what it is, whole.
-  const setTaskProject = (value: string) => {
+  // A task's slots: what was set here, else what the status field implies.
+  // Set here, it is declared — with the rest worked out underneath on save.
+  const derived = isTask ? derivedTask() : {};
+  const taskSlot = (slot: string) => profiles.task?.[slot] ?? derived[slot];
+  const setTaskSlot = (slot: string, value: string) => {
     const next = { ...profiles };
     const task = { ...(next.task ?? {}) } as Record<string, unknown>;
-    if (value) task.project = value;
-    else delete task.project;
+    if (value) task[slot] = slotSpec(value);
+    else if (slot in derived) task[slot] = null; // none, said: not the one the status field implied
+    else delete task[slot];
+    // What matches what would be worked out anyway need not be said.
+    if (JSON.stringify(task[slot]) === JSON.stringify(derived[slot])) delete task[slot];
     if (Object.keys(task).length) next.task = task;
     else delete next.task;
     setProfiles(next);
@@ -638,6 +653,10 @@ function ProfilesSection({
         So a sync, Talaris, or any app reading the interchange format knows which field is the email, the start, the project. Hermes itself needs none of it.
       </div>
       <div className="row" style={{ gap: 14, flexWrap: "wrap" }}>
+        <label className="row" style={{ gap: 6 }} title={isTask ? `Because ${statusName} is a status with completion` : "A type with a Status field whose completion is set is a task"}>
+          <input type="checkbox" checked={isTask} disabled style={{ width: "auto" }} />
+          <span>A task</span>
+        </label>
         {Object.entries(PROFILE_SLOTS).map(([name, def]) => (
           <label className="row" style={{ gap: 6 }} key={name}>
             <input type="checkbox" checked={name in profiles} onChange={(e) => toggle(name, e.target.checked)} style={{ width: "auto" }} />
@@ -664,18 +683,26 @@ function ProfilesSection({
           })}
         </div>
       ))}
-      {isTask && (
+      {isTask ? (
         <div className="fields-table" style={{ marginTop: 8 }}>
-          <div className="field-row">
-            <span className="f-label" style={{ minWidth: 130 }}>A task's project</span>
-            <select className="f-type" value={slotValue(profiles.task?.project)} onChange={(e) => setTaskProject(e.target.value)}>
-              <option value="">{projectChoices.length ? "— none —" : "— no reference fields —"}</option>
-              {projectChoices.map((c) => (
-                <option key={c.value} value={c.value}>{c.label}</option>
-              ))}
-            </select>
-          </div>
+          <div className="hint" style={{ margin: "4px 0" }}>A task — because {statusName} is a status with completion (set under Status options)</div>
+          {TASK_SLOTS.map(([slot, label, kind]) => {
+            const choices = slotChoices(fields, kind);
+            return (
+              <div className="field-row" key={slot}>
+                <span className="f-label" style={{ minWidth: 130 }}>{label}</span>
+                <select className="f-type" value={slotValue(taskSlot(slot))} onChange={(e) => setTaskSlot(slot, e.target.value)}>
+                  <option value="">{choices.length ? "— none —" : kind === "ref" ? "— no reference fields —" : "— no fitting field —"}</option>
+                  {choices.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
         </div>
+      ) : (
+        <div className="hint" style={{ marginTop: 6 }}>Not a task: a type is one when it has a Status field and its completion is set.</div>
       )}
     </div>
   );
