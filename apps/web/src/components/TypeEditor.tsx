@@ -632,7 +632,7 @@ export function TypeEditor({
 const STATE_FITS = (complete: boolean): [string, string][] =>
   complete ? [["done", "Done"], ["cancelled", "Cancelled"]] : [["not-started", "Not started"], ["in-progress", "In progress"], ["waiting", "Waiting"]];
 
-const TASK_SLOTS: [string, string, SlotKind][] = [["title", "Name", "words"], ["start", "Available", "when"], ["due", "Due", "when"], ["project", "Project", "ref"]];
+const TASK_SLOTS: [string, string, SlotKind][] = [["title", "Name", "words"], ["start", "Available", "when"], ["due", "Due", "when"], ["project", "Project", "ref"], ["body", "Notes", "body"]];
 
 function ProfilesSection({
   fields,

@@ -255,7 +255,7 @@ that the consumer should look for something like it.
 
 | profile | slots |
 |---|---|
-| `task` | `title`, `status`, `completeValues` (a list of values, not a field), `states` (a map of values, not a field), `start`, `due`, `project` |
+| `task` | `title`, `status`, `completeValues` (a list of values, not a field), `states` (a map of values, not a field), `start`, `due`, `project`, `body` |
 | `event` | `title`, `start`, `end`, `location`, `attendees`, `organizer`, `body` |
 | `contact` | `title`, `email`, `phone`, `organization`, `role`, `body` |
 | `note` | `title`, `body` |
@@ -292,7 +292,8 @@ finished" that disagree are one answer too many. An option with no state is
 allowed and says so: its meaning is not declared, and a consumer that needs one
 must not guess it from the name.
 
-`body` may name `content`, the reserved body slot, as `note`'s may. `email` and
+`body` may name `content`, the reserved body slot, as `note`'s may — a task's
+too: its notes, wherever the producer keeps them. `email` and
 `phone` may name a `many` field: a person with two addresses has two, and the
 first is not more theirs than the second. `organization` names a `text` field
 or a `reference` to an organization the producer keeps as a thing of its own;

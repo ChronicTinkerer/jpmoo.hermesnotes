@@ -401,6 +401,58 @@
       "why": "An event's `start` and `end` follow the part mapping exactly as a task's `start` and `due` do. One producer's single span is the profile's two ends, and the labels on it — From, Until — are the producer's words, not a vocabulary to match."
     },
     {
+      "id": "profile/a-task-says-where-its-notes-are",
+      "level": 1,
+      "op": "read",
+      "given": {
+        "type": {
+          "id": "t_task",
+          "name": "Task",
+          "fields": [
+            {
+              "key": "title",
+              "kind": "text"
+            },
+            {
+              "key": "status",
+              "kind": "enum",
+              "options": [
+                "open",
+                "done"
+              ]
+            },
+            {
+              "key": "notes",
+              "kind": "richtext"
+            }
+          ],
+          "profiles": {
+            "task": {
+              "title": "title",
+              "status": "status",
+              "completeValues": [
+                "done"
+              ],
+              "body": "notes"
+            }
+          }
+        },
+        "object": {
+          "properties": {
+            "title": "Call about the laptops",
+            "status": "open",
+            "notes": "Ask about take-home policy\nParent tools"
+          }
+        }
+      },
+      "args": {
+        "key": "body",
+        "profile": "task"
+      },
+      "expect": "Ask about take-home policy\nParent tools",
+      "why": "Every task tool keeps notes on a task, and no two call the field the same — one says `notes`, another `description`. Without a `body` slot a sync cannot tell they are one thing, and a task's notes stay where they were written."
+    },
+    {
       "id": "profile/a-project-says-it-is-one",
       "level": 1,
       "op": "profilesOf",

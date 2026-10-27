@@ -59,6 +59,24 @@ was not closed with the rest — and each says so at its own end rather than
 here. No count: the one that used to be in this spot drifted from three to ten
 without anybody noticing, which is what a number in prose does.
 
+### A task could not say where its notes were — closed
+
+**Was:** `event`, `contact`, `note` and `project` each had a `body`; `task`
+did not. Every task tool keeps words on a task, and no two call the field the
+same: Hermes' Task keeps them in `notes`, Talaris's in `description`. With no
+slot to say so, the Talaris–Hermes sync carried a task's name, status, dates
+and project and left its notes where they were typed — found when a
+description written in Talaris never reached Hermes.
+
+**Now:** `task` has `body`, read as every other profile's: a field, or
+`content`. One case in `fixtures/profile.json`. Hermes' type editor offers it
+as the task's Notes; Talaris's Task declares its `description`.
+
+**Additive, so `format` does not bump.** A producer that does not declare it
+says it has no notes to carry, which is what its silence said before.
+
+→ `fixtures/profile.json` (`profile/a-task-says-where-its-notes-are`)
+
 ### A status could say finished and nothing else — closed
 
 **Found by building, 2026-10-25:** the Hermes sync in Talaris. The task
